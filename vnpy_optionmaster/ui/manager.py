@@ -881,7 +881,6 @@ class PricingVolatilityManager(QtWidgets.QWidget):
         Set pricing impv to the otm mid impv of each strike price.
         """
         chain: ChainData = self.portfolio.get_chain(chain_symbol)
-        atm_index: str = chain.atm_index
 
         index: str
         for index in chain.indexes:
@@ -903,7 +902,6 @@ class PricingVolatilityManager(QtWidgets.QWidget):
         Fit pricing impv with cubic spline algo.
         """
         chain: ChainData = self.portfolio.get_chain(chain_symbol)
-        atm_index: str = chain.atm_index
 
         strike_prices: list = []
         pricing_impvs: list = []
@@ -983,7 +981,6 @@ class PricingVolatilityManager(QtWidgets.QWidget):
     def update_pricing_impv(self, chain_symbol: str) -> None:
         """用虚值合约的定价隐波回填百分数；行权索引不低于平值时取认购，否则取认沽。"""
         chain: ChainData = self.portfolio.get_chain(chain_symbol)
-        atm_index: str = chain.atm_index
 
         index: str
         for index in chain.indexes:

@@ -304,7 +304,7 @@ class OptionEngine(BaseEngine):
         option: OptionData
         for option in portfolio.options.values():
             # Ignore options with no underlying set
-            if not option.underlying:
+            if getattr(option, "underlying", None) is None:
                 continue
 
             self.instruments[option.vt_symbol] = option
@@ -468,8 +468,8 @@ class OptionHedgeEngine:
 
         # Calculate volume of contract to hedge
         delta_to_hedge: float = self.delta_target - portfolio.pos_delta
-        instrument = self.option_engine.get_instrument(self.vt_symbol)
-        if not isinstance(instrument, UnderlyingData) or not instrument.theo_delta:
+        instrument = cast(UnderlyingData | None, self.option_engine.get_instrument(self.vt_symbol))
+        if instrument is None or not instrument.theo_delta:
             return
 
         hedge_volume: float = delta_to_hedge / instrument.theo_delta

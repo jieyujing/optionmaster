@@ -198,6 +198,7 @@ class OptionData(InstrumentData):
 
         underlying_price: float = self.underlying.mid_price
         if not underlying_price or not self.mid_impv:
+            self.theo_delta = self.theo_gamma = self.theo_theta = self.theo_vega = 0.0
             return
         underlying_price += self.underlying_adjustment
 

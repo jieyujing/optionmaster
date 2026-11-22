@@ -67,6 +67,8 @@ def calculate_price(
     n: int = DEFAULT_STEP
 ) -> float:
     """计算期权价格。"""
+    if t <= 0 or v <= 0:
+        return max(0.0, cp * (f - k))
     option_tree: ndarray
     option_tree, _ = generate_tree(f, k, r, t, v, cp, n)
     return option_tree[0, 0]                               # type: ignore
@@ -82,6 +84,8 @@ def calculate_delta(
     n: int = DEFAULT_STEP
 ) -> float:
     """计算期权 Delta。"""
+    if t <= 0 or v <= 0:
+        return float(cp) if cp * (f - k) > 0 else 0.0
     option_tree: ndarray
     underlying_tree: ndarray
     option_tree, underlying_tree = generate_tree(f, k, r, t, v, cp, n)
@@ -103,6 +107,8 @@ def calculate_gamma(
     n: int = DEFAULT_STEP
 ) -> float:
     """计算期权 Gamma。"""
+    if t <= 0 or v <= 0:
+        return 0.0
     option_tree: ndarray
     underlying_tree: ndarray
     option_tree, underlying_tree = generate_tree(f, k, r, t, v, cp, n)
@@ -127,6 +133,8 @@ def calculate_theta(
     n: int = DEFAULT_STEP
 ) -> float:
     """计算期权 Theta。"""
+    if t <= 0 or v <= 0:
+        return 0.0
     option_tree: ndarray
     option_tree, _ = generate_tree(f, k, r, t, v, cp, n)
 
@@ -146,6 +154,8 @@ def calculate_vega(
     n: int = DEFAULT_STEP
 ) -> float:
     """计算期权 Vega。"""
+    if t <= 0 or v <= 0:
+        return 0.0
     price_1: float = calculate_price(f, k, r, t, v, cp, n)
     price_2: float = calculate_price(f, k, r, t, v * 1.001, cp, n)
     vega: float = (price_2 - price_1) / (v * 0.001)
@@ -162,6 +172,9 @@ def calculate_greeks(
     n: int = DEFAULT_STEP
 ) -> tuple[float, float, float, float, float]:
     """计算期权价格和希腊值。"""
+    if t <= 0 or v <= 0:
+        return (calculate_price(f, k, r, t, v, cp),
+                calculate_delta(f, k, r, t, v, cp), 0.0, 0.0, 0.0)
     dt: float = t / n
     option_tree: ndarray
     underlying_tree: ndarray
@@ -204,6 +217,8 @@ def calculate_impv(
     n: int = DEFAULT_STEP
 ) -> float:
     """计算期权隐含波动率。"""
+    if t <= 0 or f <= 0 or k <= 0 or n < 2:
+        return 0.0
     # Check option price must be positive
     if price <= 0:
         return 0

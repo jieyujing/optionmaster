@@ -5,6 +5,8 @@ from pathlib import Path
 from vnpy.trader.object import TickData, OrderData, TradeData
 from vnpy.trader.constant import Direction, Offset, Status
 from .risk_safety import risk_snapshot_is_fresh, record_recovery_audit
+from .trading_sessions import session_is_tradable
+from .market_data_quality import evaluate_quote, QuoteState
 from vnpy.trader.utility import round_to
 
 from .base import OptionData, UnderlyingData
@@ -383,7 +385,17 @@ class ElectronicEyeAlgo:
 
     def do_trading(self) -> None:
         """风险快照有效且委托结束时才允许提交新委托。"""
+        if not self.trading_active:
+            return
+        if not session_is_tradable(
+            self.vt_symbol, policy=getattr(self.algo_engine.option_engine, "session_policy", None)
+        ):
+            return
         if not risk_snapshot_is_fresh(self.option):
+            return
+        if evaluate_quote(self.option.tick, pricetick=self.pricetick).state in (
+            QuoteState.EMPTY, QuoteState.INVALID
+        ):
             return
         if self.long_allowed and self.check_long_finished():
             self.snipe_long()

@@ -14,6 +14,7 @@ from vnpy.trader.converter import PositionHolding
 from vnpy.trader.utility import extract_vt_symbol
 
 from .time import calculate_days_to_expiry, expiry_reached, ANNUAL_DAYS
+from .market_data_quality import evaluate_quote
 
 
 APP_NAME: str = "OptionMaster"
@@ -43,6 +44,8 @@ class InstrumentData:
         self.short_pos: int = 0
         self.net_pos: int = 0
         self.mid_price: float = 0
+        # A display-only last-known midpoint must not be interpreted as tradable.
+        self.mark_valid: bool = False
 
         self.tick: TickData | None = None
         self.portfolio: PortfolioData
@@ -52,9 +55,12 @@ class InstrumentData:
         self.net_pos = self.long_pos - self.short_pos
 
     def update_tick(self, tick: TickData) -> None:
-        """保存行情，并用买一价和卖一价的平均值作为中间价。"""
+        """Store quote, but only a valid two-sided book can refresh the midpoint."""
+        quality = evaluate_quote(tick, pricetick=self.pricetick)
         self.tick = tick
-        self.mid_price = (tick.bid_price_1 + tick.ask_price_1) / 2
+        self.mark_valid = quality.has_reliable_mid
+        if self.mark_valid:
+            self.mid_price = (tick.bid_price_1 + tick.ask_price_1) / 2
 
     def update_trade(self, trade: TradeData) -> None:
         """多头开仓增加多仓，多头平仓减少空仓，空头开仓增加空仓，空头平仓减少多仓，然后重算净持仓。"""
@@ -130,6 +136,8 @@ class OptionData(InstrumentData):
         # Greeks remain last-known values when the IV input is unavailable.
         # This flag must be checked by every automatic risk-taking path.
         self.greeks_valid: bool = False
+        # The exact accepted option/underlying Tick pair used for these Greeks.
+        self.greeks_quote_version: tuple[TickData | None, TickData | None] | None = None
 
         self.pos_value: float = 0
         self.pos_delta: float = 0
@@ -152,6 +160,9 @@ class OptionData(InstrumentData):
         self.impv_valid = False
         self.refresh_expiry()
         if not self.tick or not self.underlying:
+            return
+        if (not getattr(self, "mark_valid", False)
+                or not getattr(self.underlying, "mark_valid", False)):
             return
 
         underlying_price: float = self.underlying.mid_price
@@ -205,6 +216,9 @@ class OptionData(InstrumentData):
         self.refresh_expiry()
         if not self.underlying:
             return
+        if (not getattr(self, "mark_valid", True)
+                or not getattr(self.underlying, "mark_valid", True)):
+            return
 
         underlying_price: float = self.underlying.mid_price
         if (not isfinite(underlying_price) or underlying_price <= 0
@@ -235,6 +249,7 @@ class OptionData(InstrumentData):
         self.theo_theta = theta * self.size / 240
         self.theo_vega = vega * self.size / 100
         self.greeks_valid = True
+        self.greeks_quote_version = (self.tick, getattr(self.underlying, "tick", None))
 
     def calculate_pos_greeks(self) -> None:
         """有行情时用最新价乘合约乘数和净持仓得到持仓市值，并把理论希腊值乘净持仓。"""
@@ -519,11 +534,13 @@ class ChainData:
                 continue
 
             call_tick: TickData | None = call.tick
-            if not call_tick or not call_tick.bid_price_1 or not call_tick.ask_price_1:
-                continue
-
             put_tick: TickData | None = put.tick
-            if not put_tick or not put_tick.bid_price_1 or not put_tick.ask_price_1:
+            if call_tick is None or put_tick is None:
+                continue
+            if (not evaluate_quote(call_tick, pricetick=call.pricetick).has_reliable_mid
+                    or not evaluate_quote(put_tick, pricetick=put.pricetick).has_reliable_mid
+                    or not getattr(call, "mark_valid", False)
+                    or not getattr(put, "mark_valid", False)):
                 continue
 
             call_mid_price: float = (call_tick.ask_price_1 + call_tick.bid_price_1) / 2
@@ -538,6 +555,9 @@ class ChainData:
 
         self.atm_price = atm_price
         self.atm_index = atm_index
+        if not atm_index and self.use_synthetic:
+            self.underlying.mark_valid = False
+            self.update_underlying_tick()
 
     def calculate_underlying_adjustment(self) -> None:
         """没有平值价格时返回，否则用平值认购中间价减认沽中间价加行权价，再减去标的中间价。"""
@@ -547,6 +567,8 @@ class ChainData:
         atm_call: OptionData | None = self.calls.get(self.atm_index)
         atm_put: OptionData | None = self.puts.get(self.atm_index)
         if atm_call is None or atm_put is None:
+            return
+        if not getattr(atm_call, "mark_valid", False) or not getattr(atm_put, "mark_valid", False):
             return
 
         call_price: float = atm_call.mid_price
@@ -560,9 +582,18 @@ class ChainData:
         call: OptionData | None = self.calls.get(self.atm_index)
         put: OptionData | None = self.puts.get(self.atm_index)
         if call is None or put is None or not self.atm_price:
+            if getattr(self, "use_synthetic", False):
+                self.underlying.mark_valid = False
+                self.update_underlying_tick()
+            return
+        if not getattr(call, "mark_valid", False) or not getattr(put, "mark_valid", False):
+            # A synthetic forward cannot be refreshed from incomplete option books.
+            self.underlying.mark_valid = False
+            self.update_underlying_tick()
             return
 
         self.underlying.mid_price = call.mid_price - put.mid_price + self.atm_price
+        self.underlying.mark_valid = True
         self.update_underlying_tick()
 
         # 推送合成期货的行情

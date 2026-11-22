@@ -8,6 +8,7 @@ from vnpy.trader.object import ContractData, OrderData, OrderRequest, TickData
 from vnpy_optionmaster.algo import ElectronicEyeAlgo
 from vnpy_optionmaster.base import APP_NAME, OptionData
 from vnpy_optionmaster.engine import OptionAlgoEngine, OptionEngine
+from _session_test_support import synthetic_session_policy
 
 
 _ASK_PRICE: float = 1.25
@@ -52,7 +53,11 @@ class _MainEngine:
         self.contract: ContractData = contract
         self.calls: list[tuple[OrderRequest, str]] = []
         self.orderids: list[str] = []
+        self.tick: TickData = _tick(10)
         self._seq: int = 0
+
+    def get_tick(self, vt_symbol: str) -> TickData | None:
+        return self.tick if vt_symbol == self.contract.vt_symbol else None
 
     def get_contract(self, vt_symbol: str) -> ContractData | None:
         if vt_symbol == self.contract.vt_symbol:
@@ -71,6 +76,7 @@ class _OptionEngine:
     def __init__(self, main_engine: _MainEngine) -> None:
         self.main_engine: _MainEngine = main_engine
         self.event_engine: _EventEngine = _EventEngine()
+        self.session_policy = synthetic_session_policy(main_engine.contract.vt_symbol)
 
 
 def _contract() -> ContractData:
@@ -96,6 +102,8 @@ def _tick(ask_volume: float) -> TickData:
         ask_volume_1=ask_volume,
         bid_price_1=1.0,
         bid_volume_1=10,
+        limit_down=0.5,
+        limit_up=3.0,
     )
 
 

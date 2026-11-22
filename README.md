@@ -41,3 +41,6 @@ pip install .
 - **本地审计文件**：工作目录下的 `optionmaster_recovery_audit.jsonl` 为追加型记录，包含 UTC 时间、操作员、委托号、原因和状态，文件权限默认仅限所有者。备份、保留期限及访问控制由部署方负责，文件不得提交进 Git。
 - **订阅异常**：VeighNa MainEngine 暂无统一的撤订接口。若初始化过程中网关订阅部分失败，本进程会阻止该组合盲目重试。需要停止并核对网关状态，重启网关与客户端后再初始化；不应仅依靠 Python 状态回滚。
 - **环境和准入**：通用 wheel 只提供 Python 定价模型，独立 Cython 扩展需要按目标平台重新编译并验证。当前修复使用 Mac ARM64、Python 3.13 离线回归验证，**没有完成真实 CTP 成交/撤单乱序和 Windows 平台验收，不能据此直接准入实盘**。
+- **2026-11 P0 行情与订单门禁**：自动 Delta 对冲与电子眼依赖每个合约的、来自人工核验交易所日历的精确连续竞价窗口，以及盘口有效性和涨跌停上下限。默认不携带任何官方时段配置；**没有合法配置或边界不确定时，自动新增委托一律禁止**。环境变量 `OPTIONMASTER_VERIFIED_SESSIONS_FILE` 必须指向绝对路径的 JSON，要求 `version=1`、`source.official_url`、`source.verified_by`、`source.verified_at`，以及按 `symbol` / `exchange` / `trading_day` 指定的 `phase=continuous`、带 `+08:00` 的 `start` / `end`。夜盘应采用实际交易日，时间窗为左闭右开。**测试文件 `tests/_session_test_support.py` 生成的合成窗口不能用于实盘**。
+- **行情入站过滤**：只有在有效会话内、时间戳未过期、盘口可解释且同合约时间单调的 Tick 才能进入 `portfolio.update_tick()`；拒绝原因计数在 `OptionEngine.tick_rejections`。合法单边盘口保留可执行方向，但 Mid 不再取缺失侧零报价的平均值，估值和 Greeks 必须有可靠双边输入才能参与自动交易。
+- **还需单独验收**：交易所日历数据获取和每次变更的人工核验、真实 CTP 委托与成交回报乱序、断线恢复（OM-06）、Windows 验证与生产准入（OM-08）。

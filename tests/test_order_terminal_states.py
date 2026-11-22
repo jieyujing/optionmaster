@@ -143,11 +143,14 @@ def test_manual_acknowledgement_required_after_hedge_cancel(tmp_path) -> None:
     result.hedge.run()
     assert len(result.calls) == 1
 
+    # Stop automation before an operator can acknowledge a failed close.
+    result.hedge.active = False
     assert result.hedge.acknowledge_failed_close(
         operator="operator", reason="fills and holdings inspected",
         expected_orderid="TEST.1", positions_verified=True,
         audit_path=tmp_path / "recovery.jsonl"
     )  # operator audited external state
+    result.hedge.active = True  # explicit manual restart after reconciliation
     result.hedge.run()
     assert len(result.calls) == 2
     assert result.calls[-1][0].offset == Offset.CLOSE  # retry closing, not opening

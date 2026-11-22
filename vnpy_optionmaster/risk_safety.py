@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from .trading_sessions import CHINA_TZ
 
 
 MAX_QUOTE_AGE_SECONDS: int = 30
@@ -17,33 +18,29 @@ def quote_is_fresh(
     now: datetime | None = None,
     max_age_seconds: int = MAX_QUOTE_AGE_SECONDS
 ) -> bool:
-    """Reject absent, stale or future-dated exchange ticks.
+    """Check exchange timestamps in Asia/Shanghai, not the host's local zone.
 
-    Naive exchange timestamps are interpreted in the host's local time zone;
-    live gateway deployments must align their host and exchange clocks.
+    Naive CTP timestamps and a naive injected clock are treated as China time;
+    aware timestamps are converted. Clocks must be synchronized by deployment.
     """
     if tick is None or max_age_seconds <= 0:
         return False
 
+    def normalize(stamp: datetime) -> datetime:
+        if stamp.tzinfo is None:
+            return stamp.replace(tzinfo=CHINA_TZ)
+        return stamp.astimezone(CHINA_TZ)
+
+    clock = normalize(now) if now is not None else datetime.now(CHINA_TZ)
     timestamps = [getattr(tick, "datetime", None)]
     localtime = getattr(tick, "localtime", None)
     if localtime is not None:
         timestamps.append(localtime)
 
-    for timestamp in timestamps:
-        if not isinstance(timestamp, datetime):
+    for stamp in timestamps:
+        if not isinstance(stamp, datetime):
             return False
-        if timestamp.tzinfo is None:
-            clock = (now or datetime.now()).astimezone().replace(tzinfo=None) if (
-                now is not None and now.tzinfo is not None
-            ) else (now or datetime.now())
-        else:
-            clock = now.astimezone(timestamp.tzinfo) if (
-                now is not None and now.tzinfo is not None
-            ) else datetime.now(timestamp.tzinfo)
-            if clock.tzinfo is None:
-                return False
-        age = (clock - timestamp).total_seconds()
+        age = (clock - normalize(stamp)).total_seconds()
         if not -MAX_CLOCK_SKEW_SECONDS <= age <= max_age_seconds:
             return False
     return True
@@ -53,9 +50,19 @@ def risk_snapshot_is_fresh(option: Any, *, now: datetime | None = None) -> bool:
     """A Greek calculation is actionable only while its option and underlying feeds are fresh."""
     if not getattr(option, "greeks_valid", False):
         return False
+    if not getattr(option, "mark_valid", True):
+        return False
+    if not getattr(getattr(option, "underlying", None), "mark_valid", True):
+        return False
     if not quote_is_fresh(getattr(option, "tick", None), now=now):
         return False
     underlying = getattr(option, "underlying", None)
+    version = getattr(option, "greeks_quote_version", "legacy_no_version")
+    if version != "legacy_no_version":
+        if (version is None or len(version) != 2
+                or version[0] is not getattr(option, "tick", None)
+                or version[1] is not getattr(underlying, "tick", None)):
+            return False
     return quote_is_fresh(getattr(underlying, "tick", None), now=now)
 
 

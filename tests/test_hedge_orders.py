@@ -11,6 +11,7 @@ from vnpy.trader.object import ContractData, OrderData, OrderRequest, TickData
 
 from vnpy_optionmaster.base import APP_NAME
 from vnpy_optionmaster.engine import OptionEngine, OptionHedgeEngine
+from _session_test_support import synthetic_session_policy
 
 
 _PORTFOLIO_NAME: str = "IF_PORTFOLIO"
@@ -91,6 +92,7 @@ class _OptionEngine:
         self.event_engine: _EventEngine = _EventEngine()
         self._portfolio: _Portfolio = portfolio
         self._instrument: _Instrument = instrument
+        self.session_policy = synthetic_session_policy(main_engine.contract.vt_symbol)
 
     def get_portfolio(self, portfolio_name: str) -> _Portfolio:
         assert portfolio_name == _PORTFOLIO_NAME
@@ -150,6 +152,8 @@ def _tick(contract: ContractData) -> TickData:
         ask_volume_1=10,
         bid_price_1=_BID_PRICE,
         bid_volume_1=10,
+        limit_down=8.0,
+        limit_up=15.0,
     )
 
 
@@ -202,6 +206,7 @@ def _run_hedge(
     hedge.delta_target = _DELTA_TARGET
     hedge.delta_range = _DELTA_RANGE
     hedge.hedge_payup = _HEDGE_PAYUP
+    hedge.active = True
     hedge.run()
     return _HedgeResult(hedge, main_engine.calls, tick, contract)
 

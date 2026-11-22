@@ -1,5 +1,6 @@
 """期权主引擎以及 Delta 对冲、电子眼和风控。"""
 from copy import copy
+from datetime import datetime
 from math import floor, isfinite
 from pathlib import Path
 from collections import defaultdict
@@ -39,6 +40,9 @@ from .base import (
 from .pricing import black_76, binomial_tree, black_scholes
 from .algo import ElectronicEyeAlgo
 from .risk_safety import quote_is_fresh, risk_snapshot_is_fresh, record_recovery_audit
+from .trading_sessions import session_is_tradable
+from .trading_sessions import CHINA_TZ
+from .market_data_quality import evaluate_quote, valid_order_price, direction_is_executable
 
 
 PRICING_MODELS: dict = {
@@ -64,6 +68,9 @@ class OptionEngine(BaseEngine):
         # MainEngine has no unsubscribe API. Failed partial subscriptions must
         # block automatic reinitialization until the gateway session is reset.
         self.subscription_uncertain: dict[str, set[str]] = {}
+        # Only accepted, ordered quote versions may mutate portfolio IV/Greeks.
+        self.last_accepted_ticks: dict[str, tuple[str, datetime, tuple]] = {}
+        self.tick_rejections: dict[str, int] = {}
 
         self.timer_count: int = 0
         self.timer_trigger: int = 60
@@ -170,18 +177,74 @@ class OptionEngine(BaseEngine):
         self.event_engine.register(EVENT_TIMER, self.process_timer_event)
 
     def process_tick_event(self, event: Event) -> None:
-        """没有登记合约或合约没有组合时返回，否则让组合更新行情。"""
+        """Only valid, chronological market data may change portfolio risk."""
         tick: TickData = event.data
 
-        instrument: InstrumentData | None = self.instruments.get(tick.vt_symbol, None)
-        if not instrument:
+        instrument: InstrumentData | None = self.instruments.get(tick.vt_symbol)
+        if instrument is None:
             return
 
-        portfolio: PortfolioData = instrument.portfolio
-        if not portfolio:
+        portfolio: PortfolioData | None = getattr(instrument, "portfolio", None)
+        if portfolio is None:
             return
+
+        counters: dict[str, int] | None = getattr(self, "tick_rejections", None)
+        if counters is None:
+            counters = {}
+            self.tick_rejections = counters
+
+        def reject(reason: str) -> None:
+            counters[reason] = counters.get(reason, 0) + 1
+
+        if not session_is_tradable(
+            tick.vt_symbol, policy=getattr(self, "session_policy", None)
+        ):
+            reject("session_closed_or_unverified")
+            return
+
+        if not quote_is_fresh(tick):
+            reject("stale_or_invalid_timestamp")
+            return
+
+        quality = evaluate_quote(tick, pricetick=getattr(instrument, "pricetick", None))
+        if quality.state.name in ("INVALID", "EMPTY"):
+            reject(quality.reason)
+            return
+
+        raw_time = getattr(tick, "datetime", None)
+        if not isinstance(raw_time, datetime):
+            reject("stale_or_invalid_timestamp")
+            return
+        stamp = (raw_time.replace(tzinfo=CHINA_TZ) if raw_time.tzinfo is None
+                 else raw_time.astimezone(CHINA_TZ))
+        signature = (
+            tick.bid_price_1, tick.bid_volume_1,
+            tick.ask_price_1, tick.ask_volume_1,
+            tick.last_price, tick.volume, tick.open_interest,
+            tick.limit_down, tick.limit_up,
+        )
+        history: dict[str, tuple[str, datetime, tuple]] | None = getattr(
+            self, "last_accepted_ticks", None
+        )
+        if history is None:
+            history = {}
+            self.last_accepted_ticks = history
+        previous = history.get(tick.vt_symbol)
+        if previous is not None:
+            gateway, last_stamp, last_signature = previous
+            if tick.gateway_name != gateway:
+                reject("source_switch_requires_reconcile")
+                return
+            if stamp < last_stamp:
+                reject("out_of_order_tick")
+                return
+            if stamp == last_stamp:
+                reject("duplicate_tick" if signature == last_signature
+                       else "ambiguous_equal_timestamp")
+                return
 
         portfolio.update_tick(tick)
+        history[tick.vt_symbol] = (tick.gateway_name, stamp, signature)
 
     def process_trade_event(self, event: Event) -> None:
         """没有登记合约或合约没有组合时返回，否则让组合更新成交。"""
@@ -529,6 +592,12 @@ class OptionHedgeEngine:
         if not self.check_order_finished():
             self.cancel_all()
             return
+        if not self.active:
+            return
+        if not session_is_tradable(
+            self.vt_symbol, policy=getattr(self.option_engine, "session_policy", None)
+        ):
+            return
 
         delta_max: float = self.delta_target + self.delta_range
         delta_min: float = self.delta_target - self.delta_range
@@ -593,6 +662,7 @@ class OptionHedgeEngine:
         contract: ContractData | None = self.main_engine.get_contract(self.vt_symbol)
         if contract is None or contract.min_volume <= 0 or contract.pricetick <= 0:
             return
+        quality = evaluate_quote(tick, pricetick=contract.pricetick)
 
         converter: OffsetConverter | None = self.main_engine.get_converter(contract.gateway_name)
         if converter is None:
@@ -623,7 +693,11 @@ class OptionHedgeEngine:
             else:
                 available = 0
 
-        if not isfinite(price) or price <= 0:
+        if (not isfinite(price) or price <= 0
+                or not direction_is_executable(quality, buying=direction == Direction.LONG)):
+            return
+        rounded_price = round_to(price, contract.pricetick)
+        if not valid_order_price(tick, rounded_price, pricetick=contract.pricetick):
             return
 
         req: OrderRequest = OrderRequest(
@@ -632,9 +706,17 @@ class OptionHedgeEngine:
             direction=direction,
             type=OrderType.LIMIT,
             volume=order_volume,
-            price=round_to(price, contract.pricetick),
+            price=rounded_price,
             reference=f"{APP_NAME}_DeltaHedging"
         )
+
+        # Verify current gateway snapshot and session immediately before the send.
+        if (self.main_engine.get_tick(self.vt_symbol) is not tick
+                or not quote_is_fresh(tick)
+                or not session_is_tradable(
+                    self.vt_symbol, policy=getattr(self.option_engine, "session_policy", None)
+                )):
+            return
 
         # Close positon if opposite available is enough
         available = max(0.0, available)
@@ -862,10 +944,27 @@ class OptionAlgoEngine:
         contract: ContractData | None = self.main_engine.get_contract(vt_symbol)
         if not contract or not isfinite(price) or price <= 0 or not isfinite(volume):
             return ""
-        if volume <= 0 or contract.min_volume <= 0:
+        if volume <= 0 or contract.min_volume <= 0 or contract.pricetick <= 0:
             return ""
         steps = volume / contract.min_volume
         if abs(steps - round(steps)) > 1e-8:
+            return ""
+        policy = getattr(self.option_engine, "session_policy", None)
+        if not session_is_tradable(vt_symbol, policy=policy):
+            return ""
+        tick: TickData | None = self.main_engine.get_tick(vt_symbol)
+        if tick is None or not quote_is_fresh(tick):
+            return ""
+        quality = evaluate_quote(tick, pricetick=contract.pricetick)
+        if not direction_is_executable(quality, buying=direction == Direction.LONG):
+            return ""
+        if not valid_order_price(tick, price, pricetick=contract.pricetick):
+            return ""
+        if algo.trading_active and not risk_snapshot_is_fresh(algo.option):
+            return ""
+        if self.main_engine.get_tick(vt_symbol) is not tick or not session_is_tradable(
+            vt_symbol, policy=policy
+        ):
             return ""
 
         req: OrderRequest = OrderRequest(

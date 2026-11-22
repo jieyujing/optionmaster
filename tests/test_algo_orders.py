@@ -37,6 +37,7 @@ class _OptionView:
     def __init__(self, vt_symbol: str, short_pos: int, net_pos: int, tick: TickData | None) -> None:
         self.vt_symbol: str = vt_symbol
         self.pricetick: float = 0.0001
+        self.min_volume: float = 1.0
         self.underlying: _UnderlyingView = _UnderlyingView()
         self.short_pos: int = short_pos
         self.net_pos: int = net_pos
@@ -241,3 +242,29 @@ class TestAlgoOrders:
             assert req.volume <= tick.ask_volume_1
             assert req.volume <= algo.max_order_size
             assert algo_engine.order_algo_map[main_engine.orderids[0]] is algo
+
+
+def test_failed_gateway_order_id_does_not_block_algo(monkeypatch) -> None:
+    algo, main_engine, algo_engine = _make_algo(short_pos=0, net_pos=0, tick=None)
+    monkeypatch.setattr(main_engine, "send_order", lambda request, gateway_name: "")
+    algo.buy(1.8, 2)
+    assert not algo.long_active_orderids
+    assert algo.check_long_finished()
+    assert "" not in algo_engine.order_algo_map
+
+
+def test_invalid_volume_is_not_sent() -> None:
+    algo, main_engine, algo_engine = _make_algo(short_pos=0, net_pos=0, tick=None)
+    assert algo_engine.send_order(algo, algo.vt_symbol, Direction.LONG, Offset.OPEN, 1.8, 0) == ""
+    assert algo_engine.send_order(algo, algo.vt_symbol, Direction.LONG, Offset.OPEN, 1.8, 1.5) == ""
+    assert not main_engine.calls
+
+
+def test_zero_quote_liquidity_does_not_send_order() -> None:
+    algo, main_engine, _ = _make_algo(short_pos=0, net_pos=0, tick=_tick(0))
+    algo.target_pos = 0
+    algo.max_pos = 4
+    algo.max_order_size = 4
+    algo.algo_bid_price = _ALGO_BID_PRICE
+    algo.snipe_long()
+    assert not main_engine.calls

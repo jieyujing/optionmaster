@@ -399,3 +399,28 @@ class TestHedgeOrders:
             min_volume=min_volume,
         )
         assert result.calls == []
+
+
+def test_equal_closeable_position_never_sends_zero_open() -> None:
+    # Target - current delta = 10, hedge delta/contract = 5.
+    result = _run_hedge(
+        pos_delta=-6.0,
+        long_pos=0.0,
+        long_pos_frozen=0.0,
+        short_pos=5.0,
+        short_pos_frozen=0.0,
+    )
+    _assert_single(result, Direction.LONG, Offset.CLOSE, _long_hedge_price(), 5.0)
+
+
+def test_fractional_target_uses_whole_contracts() -> None:
+    # (target 4 - current 1) / contract delta 2 = 1.5;
+    # CFFEX contract size is 1 lot, never submit fractional volume.
+    result = _run_hedge(
+        pos_delta=1.0,
+        long_pos=0.0,
+        long_pos_frozen=0.0,
+        short_pos=0.0,
+        short_pos_frozen=0.0,
+    )
+    _assert_single(result, Direction.LONG, Offset.OPEN, _long_hedge_price(), 1.0)

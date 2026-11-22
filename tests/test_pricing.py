@@ -156,3 +156,39 @@ class TestBinomialTree:
         assert delta == pytest.approx(expected_delta, abs=_ABS_TOLERANCE)
         assert greeks[0] == pytest.approx(expected_price, abs=_ABS_TOLERANCE)
         assert greeks[1] == pytest.approx(expected_delta, abs=_ABS_TOLERANCE)
+
+
+@pytest.mark.parametrize("model", [_BLACK_SCHOLES, _BLACK_76, _BINOMIAL_TREE])
+@pytest.mark.parametrize("cp", [1, -1])
+def test_expiry_boundary_is_intrinsic(model: ModuleType, cp: int) -> None:
+    spot: float = 105.0
+    strike: float = 100.0
+    expected: float = max(0.0, cp * (spot - strike))
+    assert model.calculate_price(spot, strike, 0.05, 0.0, 0.2, cp) == pytest.approx(expected)
+    greeks = model.calculate_greeks(spot, strike, 0.05, 0.0, 0.2, cp)
+    assert greeks[0] == pytest.approx(expected)
+    assert all(abs(greek) <= 1.0 for greek in greeks[1:])
+
+
+def test_black_76_theta_matches_finite_difference() -> None:
+    f, k, r, t, v, cp = 100.0, 100.0, 0.05, 1.0, 0.2, 1
+    dt = 1e-5
+    expected = -(
+        _BLACK_76.calculate_price(f, k, r, t + dt, v, cp)
+        - _BLACK_76.calculate_price(f, k, r, t - dt, v, cp)
+    ) / (2 * dt)
+    theta = _BLACK_76.calculate_theta(f, k, r, t, v, cp)
+    assert theta == pytest.approx(expected, abs=1e-5)
+
+
+@pytest.mark.parametrize("model", [_BLACK_SCHOLES, _BLACK_76])
+def test_implied_volatility_round_trip_deep_otm(model: ModuleType) -> None:
+    f, k, r, t, sigma, cp = 100.0, 140.0, 0.02, 0.05, 0.6, 1
+    fair_price = model.calculate_price(f, k, r, t, sigma, cp)
+    implied = model.calculate_impv(fair_price, f, k, r, t, cp)
+    assert implied == pytest.approx(sigma, abs=0.0001)
+
+
+@pytest.mark.parametrize("model", [_BLACK_SCHOLES, _BLACK_76, _BINOMIAL_TREE])
+def test_impv_at_expiry_has_no_volatility(model: ModuleType) -> None:
+    assert model.calculate_impv(1.0, 100.0, 100.0, 0.02, 0.0, 1) == 0.0

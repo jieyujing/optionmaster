@@ -103,7 +103,7 @@ class ElectronicEyeAlgo:
         self.target_pos = params["target_pos"]
         self.max_order_size = params["max_order_size"]
 
-        if not self.max_order_size:
+        if self.max_order_size <= 0:
             self.write_log("请先设置最大委托数量")
             return False
 
@@ -192,22 +192,26 @@ class ElectronicEyeAlgo:
     def buy(self, price: float, volume: int) -> None:
         """买入开仓，并把返回的委托号记入多头活动委托。"""
         vt_orderid: str = self.send_order(Direction.LONG, Offset.OPEN, price, volume)
-        self.long_active_orderids.add(vt_orderid)
+        if vt_orderid:
+            self.long_active_orderids.add(vt_orderid)
 
     def sell(self, price: float, volume: int) -> None:
         """卖出平仓，并把返回的委托号记入空头活动委托。"""
         vt_orderid: str = self.send_order(Direction.SHORT, Offset.CLOSE, price, volume)
-        self.short_active_orderids.add(vt_orderid)
+        if vt_orderid:
+            self.short_active_orderids.add(vt_orderid)
 
     def short(self, price: float, volume: int) -> None:
         """卖出开仓，并把返回的委托号记入空头活动委托。"""
         vt_orderid: str = self.send_order(Direction.SHORT, Offset.OPEN, price, volume)
-        self.short_active_orderids.add(vt_orderid)
+        if vt_orderid:
+            self.short_active_orderids.add(vt_orderid)
 
     def cover(self, price: float, volume: int) -> None:
         """买入平仓，并把返回的委托号记入多头活动委托。"""
         vt_orderid: str = self.send_order(Direction.LONG, Offset.CLOSE, price, volume)
-        self.long_active_orderids.add(vt_orderid)
+        if vt_orderid:
+            self.long_active_orderids.add(vt_orderid)
 
     def send_long(self, price: float, volume: int) -> None:
         """没有空仓时买入开仓，空仓足够时买入平仓，否则先平掉空仓再买入剩余数量。"""
@@ -307,14 +311,16 @@ class ElectronicEyeAlgo:
         volume_left: int = pos_up_limit - option.net_pos
 
         # Check price
-        if volume_left > 0 and tick.ask_price_1 <= self.algo_bid_price:
+        if (volume_left > 0 and tick.ask_volume_1 > 0 and tick.ask_price_1 > 0
+                and self.algo_bid_price > 0 and tick.ask_price_1 <= self.algo_bid_price):
             volume: float = min(
                 volume_left,
                 tick.ask_volume_1,
                 self.max_order_size
             )
 
-            self.send_long(self.algo_bid_price, volume)     # type: ignore
+            if volume >= option.min_volume and volume > 0:
+                self.send_long(self.algo_bid_price, volume)     # type: ignore
 
     def snipe_short(self) -> None:
         """无行情时返回；买一价不低于算法卖价且净持仓高于目标持仓减持仓范围时，按算法卖价做空。"""
@@ -328,14 +334,16 @@ class ElectronicEyeAlgo:
         volume_left: int = option.net_pos - pos_down_limit
 
         # Check price
-        if volume_left > 0 and tick.bid_price_1 >= self.algo_ask_price:
+        if (volume_left > 0 and tick.bid_volume_1 > 0 and tick.bid_price_1 > 0
+                and self.algo_ask_price > 0 and tick.bid_price_1 >= self.algo_ask_price):
             volume: float = min(
                 volume_left,
                 tick.bid_volume_1,
                 self.max_order_size
             )
 
-            self.send_short(self.algo_ask_price, volume)     # type: ignore
+            if volume >= option.min_volume and volume > 0:
+                self.send_short(self.algo_ask_price, volume)     # type: ignore
 
     def put_pricing_event(self) -> None:
         """向算法引擎推送定价事件。"""

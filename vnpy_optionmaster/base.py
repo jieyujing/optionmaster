@@ -100,6 +100,7 @@ class OptionData(InstrumentData):
         self.option_expiry: datetime = contract.option_expiry                       # type: ignore
         self.days_to_expiry: int = calculate_days_to_expiry(contract.option_expiry) # type: ignore
         self.time_to_expiry: float = self.days_to_expiry / ANNUAL_DAYS
+        self._expiry_date_checked = datetime.now().date()
 
         self.interest_rate: float = 0
 
@@ -131,8 +132,17 @@ class OptionData(InstrumentData):
         self.pos_theta: float = 0
         self.pos_vega: float = 0
 
+    def refresh_expiry(self) -> None:
+        """Refresh remaining trading time when an overnight session crosses dates."""
+        today = datetime.now().date()
+        if today != self._expiry_date_checked:
+            self.days_to_expiry = calculate_days_to_expiry(self.option_expiry)
+            self.time_to_expiry = self.days_to_expiry / ANNUAL_DAYS
+            self._expiry_date_checked = today
+
     def calculate_option_impv(self) -> None:
         """缺少行情、标的或标的中间价时返回，否则用标的中间价加调整量计算买价、卖价和中间价的隐含波动率。"""
+        self.refresh_expiry()
         if not self.tick or not self.underlying:
             return
 
@@ -149,7 +159,7 @@ class OptionData(InstrumentData):
         elif ask_price:
             mid_price = ask_price
         elif bid_price:
-            mid_price = ask_price
+            mid_price = bid_price
         else:
             mid_price = 0
 
@@ -182,6 +192,7 @@ class OptionData(InstrumentData):
 
     def calculate_theo_greeks(self) -> None:
         """缺少标的、标的中间价或中间隐含波动率时返回，否则计算理论希腊值，delta 与 gamma 乘合约乘数，theta 再除以 240，vega 再除以 100。"""
+        self.refresh_expiry()
         if not self.underlying:
             return
 
@@ -220,6 +231,7 @@ class OptionData(InstrumentData):
 
     def calculate_ref_price(self) -> float:
         """用标的中间价加调整量和定价隐含波动率计算参考价。"""
+        self.refresh_expiry()
         underlying_price: float = self.underlying.mid_price
         underlying_price += self.underlying_adjustment
 
@@ -239,6 +251,8 @@ class OptionData(InstrumentData):
         super().update_tick(tick)
 
         self.calculate_option_impv()
+        self.calculate_theo_greeks()
+        self.calculate_pos_greeks()
 
     def update_trade(self, trade: TradeData) -> None:
         """更新成交后重算持仓希腊值。"""
@@ -403,6 +417,9 @@ class ChainData:
             if option.chain_index == self.atm_index:
                 self.update_synthetic_price()
 
+        # Reaggregate IV/Greek changes on option ticks even without a new underlying tick.
+        self.calculate_pos_greeks()
+
     def update_underlying_tick(self) -> None:
         """非合成标的时重算调整量，然后用该调整量更新链上全部期权并重算持仓希腊值。"""
         if not self.use_synthetic:
@@ -480,7 +497,9 @@ class ChainData:
         index: str
         call: OptionData
         for index, call in self.calls.items():
-            put: OptionData = self.puts[index]
+            put: OptionData | None = self.puts.get(index)
+            if put is None:
+                continue
 
             call_tick: TickData | None = call.tick
             if not call_tick or not call_tick.bid_price_1 or not call_tick.ask_price_1:

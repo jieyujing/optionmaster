@@ -102,7 +102,6 @@ def calculate_theta(
 
     if not d1:
         d1 = calculate_d1(s, k, r, t, v)
-    d2: float = d1 - v * sqrt(t)
 
     # Calendar-time theta at fixed futures price: the carry term is +r * price.
     theta: float = (-s * exp(-r * t) * pdf(d1) * v / (2 * sqrt(t))

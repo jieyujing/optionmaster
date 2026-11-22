@@ -486,9 +486,11 @@ class OptionHedgeEngine:
             return
 
         converter: OffsetConverter | None = self.main_engine.get_converter(contract.gateway_name)
-        holding: PositionHolding | None = None
-        if converter:
-            holding = converter.get_position_holding(self.vt_symbol)
+        if converter is None:
+            return
+        holding: PositionHolding | None = converter.get_position_holding(self.vt_symbol)
+        if holding is None:
+            return
 
         # Never submit a fractional contract below or between lot increments.
         order_volume: float = floor(abs(hedge_volume) / contract.min_volume + 1e-9) * contract.min_volume
@@ -545,8 +547,9 @@ class OptionHedgeEngine:
             close_req.offset = Offset.CLOSE
             close_req.volume = available
             close_orderid: str = self.main_engine.send_order(close_req, contract.gateway_name)
-            if close_orderid:
-                self.active_orderids.add(close_orderid)
+            if not close_orderid:
+                return
+            self.active_orderids.add(close_orderid)
 
             open_req: OrderRequest = copy(req)
             open_req.offset = Offset.OPEN

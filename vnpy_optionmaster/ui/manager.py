@@ -11,6 +11,7 @@ from vnpy.trader.engine import MainEngine
 from vnpy.trader.ui import QtWidgets, QtCore, QtGui
 from vnpy.trader.event import EVENT_TICK, EVENT_TIMER, EVENT_TRADE
 from vnpy.trader.object import TickData, TradeData, LogData
+from vnpy.trader.constant import Direction, Status
 from vnpy.trader.utility import save_json, load_json
 
 from ..engine import OptionEngine, OptionAlgoEngine
@@ -290,64 +291,52 @@ class ElectronicEyeMonitor(QtWidgets.QTableWidget):
 
             index: str
             for index in chain.indexes:
-                call: OptionData = chain.calls[index]
-                put: OptionData = chain.puts[index]
-
+                call: OptionData | None = chain.calls.get(index)
+                put: OptionData | None = chain.puts.get(index)
                 current_row += 1
 
-                # Call cells
-                call_cells: dict = {}
+                # Missing legs are legitimate while contracts arrive piecemeal.
+                # Render the available leg, leaving absent cells genuinely empty.
+                if call is not None:
+                    call_cells: dict = {}
+                    for column, d in enumerate(self.headers):
+                        cell_type: type = d["cell"]
+                        if issubclass(cell_type, QtWidgets.QPushButton):
+                            cell: Any = cell_type(call.vt_symbol, self)
+                        else:
+                            cell = cell_type()
 
-                column: int
-                d: dict
-                for column, d in enumerate(self.headers):
-                    cell_type: type = d["cell"]
+                        call_cells[d["name"]] = cell
+                        if isinstance(cell, QtWidgets.QTableWidgetItem):
+                            self.setItem(current_row, column, cell)
+                        else:
+                            self.setCellWidget(current_row, column, cell)
 
-                    if issubclass(cell_type, QtWidgets.QPushButton):
-                        # 单元格类既可能是表格项，也可能是按钮控件
-                        cell: Any = cell_type(call.vt_symbol, self)
-                    else:
-                        cell = cell_type()
+                    self.cells[call.vt_symbol] = call_cells
 
-                    call_cells[d["name"]] = cell
+                if put is not None:
+                    put_cells: dict = {}
+                    put_headers: list = copy(self.headers)
+                    put_headers.reverse()
+                    for column, d in enumerate(put_headers):
+                        column += (strike_column + 1)
+                        cell_type = d["cell"]
+                        if issubclass(cell_type, QtWidgets.QPushButton):
+                            cell = cell_type(put.vt_symbol, self)
+                        else:
+                            cell = cell_type()
 
-                    if isinstance(cell, QtWidgets.QTableWidgetItem):
-                        self.setItem(current_row, column, cell)
-                    else:
-                        self.setCellWidget(current_row, column, cell)
+                        put_cells[d["name"]] = cell
+                        if isinstance(cell, QtWidgets.QTableWidgetItem):
+                            self.setItem(current_row, column, cell)
+                        else:
+                            self.setCellWidget(current_row, column, cell)
 
-                self.cells[call.vt_symbol] = call_cells
+                    self.cells[put.vt_symbol] = put_cells
 
-                # Put cells
-                put_cells: dict = {}
-                put_headers: list = copy(self.headers)
-                put_headers.reverse()
+                self.setItem(current_row, strike_column, IndexCell(str(index)))
 
-                for column, d in enumerate(put_headers):
-                    column += (strike_column + 1)
-
-                    cell_type = d["cell"]
-
-                    if issubclass(cell_type, QtWidgets.QPushButton):
-                        cell = cell_type(put.vt_symbol, self)
-                    else:
-                        cell = cell_type()
-
-                    put_cells[d["name"]] = cell
-
-                    if isinstance(cell, QtWidgets.QTableWidgetItem):
-                        self.setItem(current_row, column, cell)
-                    else:
-                        self.setCellWidget(current_row, column, cell)
-
-                self.cells[put.vt_symbol] = put_cells
-
-                # Strike cell
-                index_cell: IndexCell = IndexCell(str(call.chain_index))
-                self.setItem(current_row, strike_column, index_cell)
-
-            # Move to next row
-            current_row += 1
+            # Move to next row            current_row += 1
 
         self.resizeColumnsToContents()
 
@@ -559,6 +548,9 @@ class ElectronicEyeManager(QtWidgets.QWidget):
         stop_trading_button: QtWidgets.QPushButton = QtWidgets.QPushButton("停止交易")
         stop_trading_button.clicked.connect(self.stop_trading_for_all)
 
+        recovery_button: QtWidgets.QPushButton = QtWidgets.QPushButton("确认异常平仓并解除阻断")
+        recovery_button.clicked.connect(self.confirm_failed_close)
+
         self.price_spread_spin: AlgoDoubleSpinBox = AlgoDoubleSpinBox()
         self.volatility_spread_spin: AlgoDoubleSpinBox = AlgoDoubleSpinBox()
         self.direction_combo: AlgoDirectionCombo = AlgoDirectionCombo()
@@ -608,6 +600,7 @@ class ElectronicEyeManager(QtWidgets.QWidget):
         hbox1: QtWidgets.QHBoxLayout = QtWidgets.QHBoxLayout()
         hbox1.addWidget(stop_pricing_button)
         hbox1.addWidget(stop_trading_button)
+        hbox1.addWidget(recovery_button)
 
         vbox: QtWidgets.QVBoxLayout = QtWidgets.QVBoxLayout()
         vbox.addLayout(hbox1)
@@ -619,6 +612,60 @@ class ElectronicEyeManager(QtWidgets.QWidget):
         hbox.addLayout(vbox)
 
         self.setLayout(hbox)
+
+    def confirm_failed_close(self) -> None:
+        """Named, two-step manual approval for a specific failed electronic-eye order."""
+        candidates: dict[str, tuple[Any, Direction, str, Status]] = {}
+        for algo in self.algo_engine.algos.values():
+            if algo.trading_active:
+                continue
+            for direction, orderid, status in (
+                (Direction.LONG, algo.pending_long_close_orderid, algo.pending_long_close_status),
+                (Direction.SHORT, algo.pending_short_close_orderid, algo.pending_short_close_status),
+            ):
+                if orderid and status in (Status.CANCELLED, Status.REJECTED):
+                    label = f"{algo.vt_symbol} {direction.name} {orderid} [{status.name}]"
+                    candidates[label] = (algo, direction, orderid, status)
+
+        if not candidates:
+            QtWidgets.QMessageBox.information(
+                self, "当前无可确认委托", "请先停止对应算法，等待平仓委托被撤销或拒绝。",
+                QtWidgets.QMessageBox.StandardButton.Ok
+            )
+            return
+
+        selection, ok = QtWidgets.QInputDialog.getItem(
+            self, "选择异常平仓委托", "待解除阻断的委托：",
+            list(candidates), 0, False
+        )
+        if not ok or selection not in candidates:
+            return
+        algo, direction, orderid, status = candidates[selection]
+        operator, ok = QtWidgets.QInputDialog.getText(self, "人工恢复", "操作员姓名/工号")
+        if not ok or not operator.strip():
+            return
+        reason, ok = QtWidgets.QInputDialog.getText(self, "人工恢复", "核对依据及原因")
+        if not ok or not reason.strip():
+            return
+        confirmation = QtWidgets.QMessageBox.question(
+            self, "最终风险确认",
+            f"已核实成交数量、委托终态和当前持仓？\n{selection}\n"
+            "确认后仅解除阻断，不会自动启动算法。",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No
+        )
+        if confirmation != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        if not algo.acknowledge_failed_close(
+            direction, operator=operator, reason=reason,
+            expected_orderid=orderid, positions_verified=True
+        ):
+            QtWidgets.QMessageBox.warning(self, "恢复失败", "状态或审计写入失败，仍保持阻断。")
+        else:
+            QtWidgets.QMessageBox.information(
+                self, "已确认", f"{orderid} 已记录审计；请人工检查后重新启动。",
+                QtWidgets.QMessageBox.StandardButton.Ok
+            )
 
     def register_event(self) -> None:
         """把算法日志事件接到文本框。"""
@@ -727,6 +774,16 @@ class VolatilityDoubleSpinBox(QtWidgets.QDoubleSpinBox):
         """返回微调框中的数值。"""
         value: float = self.value()
         return value
+
+
+def _otm_option(chain: ChainData, index: str) -> OptionData | None:
+    """Return the actual OTM contract, not the opposite leg as a surrogate."""
+    option: OptionData | None = chain.calls.get(index) or chain.puts.get(index)
+    if option is None or chain.atm_price <= 0:
+        return None
+    if option.strike_price >= chain.atm_price:
+        return chain.calls.get(index)
+    return chain.puts.get(index)
 
 
 class PricingVolatilityManager(QtWidgets.QWidget):
@@ -884,23 +941,17 @@ class PricingVolatilityManager(QtWidgets.QWidget):
 
         index: str
         for index in chain.indexes:
-            call: OptionData = chain.calls[index]
-            put: OptionData = chain.puts[index]
-
-            if call.strike_price >= chain.atm_price:
-                otm: OptionData = call
-            else:
-                otm = put
-
-            call.pricing_impv = otm.mid_impv
-            put.pricing_impv = otm.mid_impv
+            otm: OptionData | None = _otm_option(chain, index)
+            if otm is None or otm.mid_impv <= 0:
+                continue
+            for leg in (chain.calls.get(index), chain.puts.get(index)):
+                if leg is not None:
+                    leg.pricing_impv = otm.mid_impv
 
         self.update_pricing_impv(chain_symbol)
 
     def fit_pricing_impv(self, chain_symbol: str) -> None:
-        """
-        Fit pricing impv with cubic spline algo.
-        """
+        """Use shape-preserving interpolation only with real, observed OTM legs."""
         chain: ChainData = self.portfolio.get_chain(chain_symbol)
 
         strike_prices: list = []
@@ -908,37 +959,32 @@ class PricingVolatilityManager(QtWidgets.QWidget):
 
         index: str
         for index in chain.indexes:
-            call: OptionData = chain.calls[index]
-            put: OptionData = chain.puts[index]
-            cells: dict = self.cells[(chain_symbol, index)]
-
-            if not cells["check"].isChecked():
-                if call.strike_price >= chain.atm_price:
-                    otm: OptionData = call
-                else:
-                    otm = put
-
-                if otm.strike_price > 0 and otm.pricing_impv > 0:
-                    strike_prices.append(otm.strike_price)
-                    pricing_impvs.append(otm.pricing_impv)
+            cells: dict | None = self.cells.get((chain_symbol, index))
+            if cells is None or cells["check"].isChecked():
+                continue
+            otm: OptionData | None = _otm_option(chain, index)
+            if otm is not None and otm.strike_price > 0 and otm.pricing_impv > 0:
+                strike_prices.append(otm.strike_price)
+                pricing_impvs.append(otm.pricing_impv)
 
         if len(strike_prices) < 2:
             return
 
-        samples: list[tuple[float, float]] = sorted(zip(strike_prices, pricing_impvs))
-        if any(right[0] <= left[0] for left, right in zip(samples, samples[1:])):
+        samples: list[tuple[float, float]] = sorted(zip(strike_prices, pricing_impvs, strict=True))
+        if any(right[0] <= left[0] for left, right in zip(samples, samples[1:], strict=False)):
             return
-        sorted_strikes, sorted_impvs = zip(*samples)
+        sorted_strikes, sorted_impvs = zip(*samples, strict=True)
         # Shape-preserving interpolation avoids negative IV overshoots.
         cs = interpolate.PchipInterpolator(sorted_strikes, sorted_impvs)
 
         for index in chain.indexes:
-            call = chain.calls[index]
-            put = chain.puts[index]
-
-            new_impv: float = max(0.0, float(cs(call.strike_price)))
-            call.pricing_impv = new_impv
-            put.pricing_impv = new_impv
+            otm = _otm_option(chain, index)
+            if otm is None:
+                continue
+            new_impv: float = max(0.0, float(cs(otm.strike_price)))
+            for leg in (chain.calls.get(index), chain.puts.get(index)):
+                if leg is not None:
+                    leg.pricing_impv = new_impv
 
         self.update_pricing_impv(chain_symbol)
 
@@ -972,11 +1018,9 @@ class PricingVolatilityManager(QtWidgets.QWidget):
 
         chain: ChainData = self.portfolio.get_chain(chain_symbol)
 
-        call: OptionData = chain.calls[index]
-        call.pricing_impv = new_impv
-
-        put: OptionData = chain.puts[index]
-        put.pricing_impv = new_impv
+        for leg in (chain.calls.get(index), chain.puts.get(index)):
+            if leg is not None:
+                leg.pricing_impv = new_impv
 
     def update_pricing_impv(self, chain_symbol: str) -> None:
         """用虚值合约的定价隐波回填百分数；行权索引不低于平值时取认购，否则取认沽。"""
@@ -984,17 +1028,14 @@ class PricingVolatilityManager(QtWidgets.QWidget):
 
         index: str
         for index in chain.indexes:
-            if chain.calls[index].strike_price >= chain.atm_price:
-                otm: OptionData = chain.calls[index]
-            else:
-                otm = chain.puts[index]
-
-            value: float = round(otm.pricing_impv * 100, 1)
-
-            key: tuple = (chain_symbol, index)
-            cells: dict | None = self.cells.get(key, None)
-            if cells:
-                cells["pricing_impv"].setValue(value)
+            otm: OptionData | None = _otm_option(chain, index)
+            cells: dict | None = self.cells.get((chain_symbol, index))
+            if cells is None:
+                continue
+            widget = cells["pricing_impv"]
+            widget.setEnabled(otm is not None)
+            if otm is not None:
+                widget.setValue(round(otm.pricing_impv * 100, 1))
 
     def update_chain_impv(self, chain_symbol: str) -> None:
         """以百分数刷新虚值、认购和认沽的中间隐波；平值行权价变化时恢复旧行颜色，并把新平值行设为黑字白底。"""
@@ -1003,17 +1044,16 @@ class PricingVolatilityManager(QtWidgets.QWidget):
 
         index: str
         for index in chain.indexes:
-            call: OptionData = chain.calls[index]
-            put: OptionData = chain.puts[index]
-            if call.strike_price >= chain.atm_price:
-                otm: OptionData = call
-            else:
-                otm = put
+            call: OptionData | None = chain.calls.get(index)
+            put: OptionData | None = chain.puts.get(index)
+            otm: OptionData | None = _otm_option(chain, index)
 
-            cells: dict = self.cells[(chain_symbol, index)]
-            cells["otm_impv"].setText(f"{otm.mid_impv:.1%}")
-            cells["call_impv"].setText(f"{call.mid_impv:.1%}")
-            cells["put_impv"].setText(f"{put.mid_impv:.1%}")
+            cells: dict | None = self.cells.get((chain_symbol, index))
+            if cells is None:
+                continue
+            cells["otm_impv"].setText(f"{otm.mid_impv:.1%}" if otm is not None and otm.mid_impv > 0 else "")
+            cells["call_impv"].setText(f"{call.mid_impv:.1%}" if call is not None and call.mid_impv > 0 else "")
+            cells["put_impv"].setText(f"{put.mid_impv:.1%}" if put is not None and put.mid_impv > 0 else "")
 
         current_atm_index: str = self.chain_atm_index.get(chain_symbol, "")
         if current_atm_index == atm_index:
@@ -1021,14 +1061,13 @@ class PricingVolatilityManager(QtWidgets.QWidget):
         self.chain_atm_index[chain_symbol] = atm_index
 
         if current_atm_index:
-            old_cells: dict = self.cells[(chain_symbol, current_atm_index)]
+            old_cells: dict | None = self.cells.get((chain_symbol, current_atm_index))
+            if old_cells:
+                for field in ["otm_impv", "call_impv", "put_impv"]:
+                    old_cells[field].setForeground(COLOR_WHITE)
+                    old_cells[field].setBackground(self.default_background)
 
-            field: str
-            for field in ["otm_impv", "call_impv", "put_impv"]:
-                old_cells[field].setForeground(COLOR_WHITE)
-                old_cells[field].setBackground(self.default_background)
-
-        if atm_index:
+        if atm_index and (chain_symbol, atm_index) in self.cells:
             new_cells: dict = self.cells[(chain_symbol, atm_index)]
 
             for field in ["otm_impv", "call_impv", "put_impv"]:

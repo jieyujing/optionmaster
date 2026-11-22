@@ -46,17 +46,23 @@ pattern = "__version__ = ['\"](?P<version>[^'\"]+)['\"]"
 [tool.hatch.build.targets.wheel]
 packages = ["vnpy_optionmaster"]
 include-package-data = true
+# This is a universal wheel: never package stale Windows-only Cython binaries.
 exclude = [
     "vnpy_optionmaster/pricing/cython_model",
-    "vnpy_optionmaster/pricing/cython_model/**/*"
+    "vnpy_optionmaster/pricing/cython_model/**/*",
+    "vnpy_optionmaster/pricing/*.pyd",
+    "vnpy_optionmaster/pricing/*.so"
 ]
 
 [tool.hatch.build]
 packages = ["vnpy_optionmaster"]
-artifacts = ["vnpy_optionmaster/pricing/*.cp*-*.pyd"]
 
 [tool.hatch.build.targets.sdist]
 include = ["vnpy_optionmaster*"]
+exclude = [
+    "vnpy_optionmaster/pricing/*.pyd",
+    "vnpy_optionmaster/pricing/*.so"
+]
 
 [tool.ruff]
 target-version = "py310"

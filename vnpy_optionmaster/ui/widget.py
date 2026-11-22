@@ -6,6 +6,7 @@ from vnpy.event import EventEngine, Event
 from vnpy.trader.engine import MainEngine
 from vnpy.trader.ui import QtWidgets, QtCore, QtGui
 from vnpy.trader.constant import Direction, Offset, OrderType
+from vnpy.trader.constant import Status
 from vnpy.trader.object import OrderData, OrderRequest, CancelRequest, ContractData, TickData
 from vnpy.trader.event import EVENT_TICK
 from vnpy.trader.utility import get_digits
@@ -313,7 +314,14 @@ class PortfolioDialog(QtWidgets.QDialog):
             precision
         )
 
-        result: bool = self.option_engine.init_portfolio(self.portfolio_name)
+        try:
+            result: bool = self.option_engine.init_portfolio(self.portfolio_name)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self, "组合初始化失败",
+                f"{exc}\n若存在不确定行情订阅，请先断开并重新连接网关，重启客户端后重试。"
+            )
+            return
 
         if result:
             self.accept()
@@ -672,6 +680,9 @@ class OptionHedgeWidget(QtWidgets.QWidget):
         self.stop_button.clicked.connect(self.stop)
         self.stop_button.setEnabled(False)
 
+        self.recovery_button: QtWidgets.QPushButton = QtWidgets.QPushButton("人工核对并解除异常平仓阻断")
+        self.recovery_button.clicked.connect(self.confirm_failed_close)
+
         form: QtWidgets.QFormLayout = QtWidgets.QFormLayout()
         form.addRow("对冲合约", self.symbol_combo)
         form.addRow("执行频率", self.trigger_spin)
@@ -680,6 +691,7 @@ class OptionHedgeWidget(QtWidgets.QWidget):
         form.addRow("委托超价", self.payup_spin)
         form.addRow(self.start_button)
         form.addRow(self.stop_button)
+        form.addRow(self.recovery_button)
 
         self.setLayout(form)
 
@@ -722,6 +734,43 @@ class OptionHedgeWidget(QtWidgets.QWidget):
         self.hedge_engine.stop()
 
         self.update_widget_status(True)
+
+    def confirm_failed_close(self) -> None:
+        """Require an operator name, reason, and explicit fill/position verification."""
+        hedge = self.hedge_engine
+        orderid = hedge.close_orderid
+        if hedge.active or hedge.close_order_status not in (Status.CANCELLED, Status.REJECTED):
+            QtWidgets.QMessageBox.warning(
+                self, "无法解除阻断", "请先停止自动对冲，并确认存在已撤销或已拒绝的平仓单。"
+            )
+            return
+        if not orderid:
+            return
+        operator, ok = QtWidgets.QInputDialog.getText(self, "人工恢复", "操作员姓名/工号")
+        if not ok or not operator.strip():
+            return
+        reason, ok = QtWidgets.QInputDialog.getText(self, "人工恢复", "核对依据及原因")
+        if not ok or not reason.strip():
+            return
+        confirmation = QtWidgets.QMessageBox.question(
+            self, "最终风险确认",
+            f"已核对交易所/网关成交、委托状态和实时持仓？\n"
+            f"平仓委托：{orderid} ({hedge.close_order_status.name})\n"
+            "确认后仅解除阻断，不会自动启动对冲。",
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+            QtWidgets.QMessageBox.StandardButton.No
+        )
+        if confirmation != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        if not hedge.acknowledge_failed_close(
+            operator=operator, reason=reason, expected_orderid=orderid, positions_verified=True
+        ):
+            QtWidgets.QMessageBox.warning(self, "恢复失败", "风险状态或审计写入失败，仍保持阻断。")
+        else:
+            QtWidgets.QMessageBox.information(
+                self, "已确认", f"{orderid} 已记录审计；请人工检查后重新启动。",
+                QtWidgets.QMessageBox.StandardButton.Ok
+            )
 
     def update_widget_status(self, status: bool) -> None:
         """为真时启用启动和参数输入并禁用停止，为假时相反。"""

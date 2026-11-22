@@ -1,6 +1,7 @@
 """期权主引擎以及 Delta 对冲、电子眼和风控。"""
 from copy import copy
 from math import floor, isfinite
+from pathlib import Path
 from collections import defaultdict
 from types import ModuleType
 from typing import cast
@@ -37,6 +38,7 @@ from .base import (
 # Restore the Cython acceleration only after rebuilding and cross-testing the models.
 from .pricing import black_76, binomial_tree, black_scholes
 from .algo import ElectronicEyeAlgo
+from .risk_safety import quote_is_fresh, risk_snapshot_is_fresh, record_recovery_audit
 
 
 PRICING_MODELS: dict = {
@@ -59,6 +61,9 @@ class OptionEngine(BaseEngine):
         self.portfolios: dict[str, PortfolioData] = {}
         self.instruments: dict[str, InstrumentData] = {}
         self.active_portfolios: dict[str, PortfolioData] = {}
+        # MainEngine has no unsubscribe API. Failed partial subscriptions must
+        # block automatic reinitialization until the gateway session is reset.
+        self.subscription_uncertain: dict[str, set[str]] = {}
 
         self.timer_count: int = 0
         self.timer_trigger: int = 60
@@ -87,17 +92,20 @@ class OptionEngine(BaseEngine):
         """
         save_json(self.setting_filename, self.setting)
 
-    def load_data(self) -> None:
-        """为活跃组合恢复非合成链的标的调整量，并把保存的定价隐含波动率写到认购和认沽。"""
+    def load_data(self, portfolio_name: str | None = None) -> None:
+        """为指定或全部活跃组合恢复调整量和定价波动率。"""
         data: dict = load_json(self.data_filename)
+        portfolios: list[PortfolioData] = list(self.active_portfolios.values())
+        if portfolio_name is not None:
+            portfolios = [p for p in portfolios if p.name == portfolio_name]
 
         portfolio: PortfolioData
-        for portfolio in self.active_portfolios.values():
-            portfolio_name: str = portfolio.name
+        for portfolio in portfolios:
+            current_portfolio_name: str = portfolio.name
 
             # Load underlying adjustment from setting
             chain_adjustments: dict = data.get("chain_adjustments", {})
-            chain_adjustment_data: dict = chain_adjustments.get(portfolio_name, {})
+            chain_adjustment_data: dict = chain_adjustments.get(current_portfolio_name, {})
 
             if chain_adjustment_data:
                 chain: ChainData
@@ -109,7 +117,7 @@ class OptionEngine(BaseEngine):
 
             # Load pricing impv from setting
             pricing_impvs: dict = data.get("pricing_impvs", {})
-            pricing_impv_data: dict = pricing_impvs.get(portfolio_name, {})
+            pricing_impv_data: dict = pricing_impvs.get(current_portfolio_name, {})
 
             if pricing_impv_data:
                 for chain in portfolio.chains.values():
@@ -119,14 +127,12 @@ class OptionEngine(BaseEngine):
                         pricing_impv: float = pricing_impv_data.get(key, 0)
 
                         if pricing_impv:
-                            call: OptionData = chain.calls[index]
-                            call.pricing_impv = pricing_impv
-
-                            put: OptionData = chain.puts[index]
-                            put.pricing_impv = pricing_impv
+                            for leg in (chain.calls.get(index), chain.puts.get(index)):
+                                if leg is not None:
+                                    leg.pricing_impv = pricing_impv
 
     def save_data(self) -> None:
-        """保存各链标的调整量，以及按行权索引保存的认购定价隐含波动率。"""
+        """保存各链标的调整量，以及每个行权价实际存在合约的定价隐波。"""
         chain_adjustments: dict = {}
         pricing_impvs: dict = {}
 
@@ -138,10 +144,13 @@ class OptionEngine(BaseEngine):
             for chain in portfolio.chains.values():
                 chain_adjustment_data[chain.chain_symbol] = chain.underlying_adjustment
 
-                call: OptionData
-                for call in chain.calls.values():
-                    key: str = f"{chain.chain_symbol}_{call.chain_index}"
-                    pricing_impv_data[key] = call.pricing_impv
+                for index in chain.indexes:
+                    # Persist put-only strikes as well, preserving the shared
+                    # per-strike IV contract (call preferred when both exist).
+                    option: OptionData | None = chain.calls.get(index) or chain.puts.get(index)
+                    if option is not None:
+                        key: str = f"{chain.chain_symbol}_{index}"
+                        pricing_impv_data[key] = option.pricing_impv
 
             chain_adjustments[portfolio.name] = chain_adjustment_data
             pricing_impvs[portfolio.name] = pricing_impv_data
@@ -286,56 +295,109 @@ class OptionEngine(BaseEngine):
         return portfolio_setting
 
     def init_portfolio(self, portfolio_name: str) -> bool:
-        """已经激活时返回假，否则订阅非本地标的和已设置标的的期权，同步持仓并加载数据。"""
-        # Add to active dict
+        """Preflight position inputs, then apply reversible state before subscriptions.
+
+        External gateway subscriptions cannot be rolled back atomically. They are
+        deliberately postponed until after all local validation and data loads.
+        """
         if portfolio_name in self.active_portfolios:
             return False
+        if self.subscription_uncertain.get(portfolio_name):
+            raise RuntimeError(
+                f"Uncertain gateway subscriptions for {portfolio_name}: restart gateway/client before retry"
+            )
         portfolio: PortfolioData = self.get_portfolio(portfolio_name)
 
-        # Subscribe market data
-        underlying: UnderlyingData
+        # Stage only this portfolio's active contracts. Never reinitialise an
+        # unrelated portfolio already registered in self.instruments.
+        candidates: dict[str, InstrumentData] = {}
         for underlying in portfolio.underlyings.values():
-            if underlying.exchange == Exchange.LOCAL:
-                continue
-
-            self.instruments[underlying.vt_symbol] = underlying
-            self.subscribe_data(underlying.vt_symbol)
-
-        option: OptionData
+            if underlying.exchange != Exchange.LOCAL:
+                candidates[underlying.vt_symbol] = underlying
         for option in portfolio.options.values():
-            # Ignore options with no underlying set
-            if getattr(option, "underlying", None) is None:
-                continue
+            if getattr(option, "underlying", None) is not None:
+                candidates[option.vt_symbol] = option
 
-            self.instruments[option.vt_symbol] = option
-            self.subscribe_data(option.vt_symbol)
+        # Fail without changing a single holding, subscription or local
+        # registration when any required contract/converter is absent.
+        holdings: dict[str, PositionHolding | None] = {}
+        for vt_symbol, instrument in candidates.items():
+            existing = self.instruments.get(vt_symbol)
+            if existing is not None and existing is not instrument:
+                raise RuntimeError(f"Conflicting registered instrument for {vt_symbol}")
 
-        # Update position volume
-        instrument: InstrumentData
-        for instrument in self.instruments.values():
-            contract: ContractData | None = self.main_engine.get_contract(instrument.vt_symbol)
+            contract: ContractData | None = self.main_engine.get_contract(vt_symbol)
             if contract is None:
-                raise RuntimeError(f"Missing contract for {instrument.vt_symbol}")
+                raise RuntimeError(f"Missing contract for {vt_symbol}")
             converter: OffsetConverter | None = self.main_engine.get_converter(contract.gateway_name)
             if converter is None:
                 raise RuntimeError(f"Missing position converter for {contract.gateway_name}")
-            holding: PositionHolding | None = converter.get_position_holding(instrument.vt_symbol)
+            holdings[vt_symbol] = converter.get_position_holding(vt_symbol)
 
-            if holding:
-                instrument.update_holding(holding)
+        # Restore only risk/position/pricing scalars on failure rather than
+        # copying or replacing live object graphs and callback registrations.
+        state_fields = (
+            "long_pos", "short_pos", "net_pos", "pos_value",
+            "pos_delta", "pos_gamma", "pos_theta", "pos_vega",
+            "underlying_adjustment", "pricing_impv",
+        )
+        state_objects: list[object] = [portfolio, *candidates.values()]
+        for chain in portfolio.chains.values():
+            state_objects.append(chain)
+            state_objects.extend(chain.calls.values())
+            state_objects.extend(chain.puts.values())
+        snapshots: list[tuple[object, dict[str, object]]] = []
+        seen: set[int] = set()
+        for obj in state_objects:
+            if id(obj) in seen:
+                continue
+            seen.add(id(obj))
+            snapshot = {name: getattr(obj, name) for name in state_fields if hasattr(obj, name)}
+            snapshots.append((obj, snapshot))
 
-        portfolio.calculate_pos_greeks()
-
-        # load_data uses active_portfolios; roll back on failure so retry works.
+        original_instruments = {symbol: self.instruments.get(symbol) for symbol in candidates}
+        attempted_subscriptions: set[str] = set()
         self.active_portfolios[portfolio_name] = portfolio
         try:
-            self.load_data()
+            for vt_symbol, instrument in candidates.items():
+                holding = holdings[vt_symbol]
+                if holding is not None:
+                    instrument.update_holding(holding)
+            portfolio.calculate_pos_greeks()
+            self.load_data(portfolio_name)
+
+            # Register before subscribing so queued market events can resolve
+            # the exact instrument; no remote subscribe occurs before this point.
+            self.instruments.update(candidates)
+            for vt_symbol in candidates:
+                attempted_subscriptions.add(vt_symbol)
+                self.subscribe_data(vt_symbol)
         except Exception:
+            if attempted_subscriptions:
+                self.subscription_uncertain.setdefault(portfolio_name, set()).update(
+                    attempted_subscriptions
+                )
+                if hasattr(self.main_engine, "write_log"):
+                    try:
+                        self.main_engine.write_log(
+                            f"Uncertain subscriptions: {portfolio_name} {sorted(attempted_subscriptions)}; "
+                            "restart gateway/client; automatic retry blocked", APP_NAME
+                        )
+                    except Exception:
+                        # Auxiliary logging must never interrupt local state rollback.
+                        pass
             self.active_portfolios.pop(portfolio_name, None)
+            for symbol, previous in original_instruments.items():
+                if previous is None:
+                    self.instruments.pop(symbol, None)
+                else:
+                    self.instruments[symbol] = previous
+            for obj, snapshot in snapshots:
+                for name, old_value in snapshot.items():
+                    setattr(obj, name, old_value)
             raise
 
         return True
-
     def get_portfolio_names(self) -> list[str]:
         """返回全部组合名称。"""
         return list(self.portfolios.keys())
@@ -391,6 +453,12 @@ class OptionHedgeEngine:
         self.active: bool = False
         self.active_orderids: set[str] = set()
         self.timer_count: int = 0
+        # A close remains unresolved until a matching ALLTRADED report and fresh
+        # position/Greek snapshot arrive. CANCELLED/REJECTED require manual review.
+        self.close_reconciliation: tuple[float, float, Direction] | None = None
+        self.close_orderid: str | None = None
+        self.close_order_status: Status | None = None
+        self.close_order_volume: float = 0.0
 
         self.register_event()
 
@@ -403,10 +471,14 @@ class OptionHedgeEngine:
         """活动委托结束时，从活动委托集合中移除。"""
         order: OrderData = event.data
 
-        if order.vt_orderid not in self.active_orderids:
-            return
+        if order.vt_orderid == self.close_orderid and not order.is_active():
+            if self.close_order_status not in (Status.ALLTRADED, Status.CANCELLED, Status.REJECTED):
+                if order.status == Status.ALLTRADED and order.traded < self.close_order_volume:
+                    self.close_order_status = Status.REJECTED
+                else:
+                    self.close_order_status = order.status
 
-        if not order.is_active():
+        if order.vt_orderid in self.active_orderids and not order.is_active():
             self.active_orderids.remove(order.vt_orderid)
 
     def process_timer_event(self, event: Event) -> None:
@@ -461,8 +533,45 @@ class OptionHedgeEngine:
         delta_max: float = self.delta_target + self.delta_range
         delta_min: float = self.delta_target - self.delta_range
 
-        # Do nothing if portfolio delta is in the allowed range
+        # Never hedge an incomplete or invalidated option-risk snapshot.
         portfolio: PortfolioData = self.option_engine.get_portfolio(self.portfolio_name)
+        if any(
+            option.net_pos and not risk_snapshot_is_fresh(option)
+            for option in getattr(portfolio, "options", {}).values()
+        ):
+            return
+
+        # A CLOSE acknowledgement is not a fill. Require both updated position
+        # and updated portfolio Delta before permitting any subsequent hedge.
+        if self.close_reconciliation is not None:
+            # Cancellation/rejection and missing/out-of-order terminal events
+            # are not proof of a filled close, even if unrelated positions move.
+            if self.close_order_status != Status.ALLTRADED:
+                return
+            old_delta, old_opposite_pos, close_direction = self.close_reconciliation
+            sync_contract = self.main_engine.get_contract(self.vt_symbol)
+            if sync_contract is None:
+                return
+            sync_converter = self.main_engine.get_converter(sync_contract.gateway_name)
+            if sync_converter is None:
+                return
+            sync_holding = sync_converter.get_position_holding(self.vt_symbol)
+            if sync_holding is None:
+                return
+            current_opposite_pos = (
+                sync_holding.short_pos if close_direction == Direction.LONG
+                else sync_holding.long_pos
+            )
+            if (not isfinite(current_opposite_pos)
+                    or current_opposite_pos > old_opposite_pos - self.close_order_volume + 1e-9
+                    or not isfinite(portfolio.pos_delta)
+                    or portfolio.pos_delta == old_delta):
+                return
+            self.close_reconciliation = None
+            self.close_orderid = None
+            self.close_order_status = None
+            self.close_order_volume = 0.0
+
         if delta_min <= portfolio.pos_delta <= delta_max:
             return
 
@@ -478,7 +587,7 @@ class OptionHedgeEngine:
 
         # Send hedge orders
         tick: TickData | None = self.main_engine.get_tick(self.vt_symbol)
-        if not tick:
+        if tick is None or not quote_is_fresh(tick):
             return
 
         contract: ContractData | None = self.main_engine.get_contract(self.vt_symbol)
@@ -535,13 +644,22 @@ class OptionHedgeEngine:
             vt_orderid: str = self.main_engine.send_order(req, contract.gateway_name)
             if vt_orderid:
                 self.active_orderids.add(vt_orderid)
+                self.close_reconciliation = (
+                    portfolio.pos_delta,
+                    holding.short_pos if direction == Direction.LONG else holding.long_pos,
+                    direction,
+                )
+                self.close_orderid = vt_orderid
+                self.close_order_status = Status.SUBMITTING
+                self.close_order_volume = req.volume
         # Open position if no oppsite available
         elif not available:
             req.offset = Offset.OPEN
             vt_orderid = self.main_engine.send_order(req, contract.gateway_name)
             if vt_orderid:
                 self.active_orderids.add(vt_orderid)
-        # Else close all opposite available and open left volume
+        # Otherwise close opposite exposure first. Re-evaluate the *remaining*
+        # hedge only after the close is terminal and positions have reconciled.
         else:
             close_req: OrderRequest = copy(req)
             close_req.offset = Offset.CLOSE
@@ -549,14 +667,45 @@ class OptionHedgeEngine:
             close_orderid: str = self.main_engine.send_order(close_req, contract.gateway_name)
             if not close_orderid:
                 return
+            self.close_reconciliation = (
+                portfolio.pos_delta,
+                holding.short_pos if direction == Direction.LONG else holding.long_pos,
+                direction,
+            )
+            self.close_orderid = close_orderid
+            self.close_order_status = Status.SUBMITTING
+            self.close_order_volume = close_req.volume
             self.active_orderids.add(close_orderid)
 
-            open_req: OrderRequest = copy(req)
-            open_req.offset = Offset.OPEN
-            open_req.volume = order_volume - available
-            open_orderid: str = self.main_engine.send_order(open_req, contract.gateway_name)
-            if open_orderid:
-                self.active_orderids.add(open_orderid)
+    def acknowledge_failed_close(
+        self, *, operator: str = "", reason: str = "", expected_orderid: str = "",
+        positions_verified: bool = False, audit_path: Path | None = None
+    ) -> bool:
+        """Fail closed until a named operator confirms the actual close/order snapshot."""
+        if (self.active or self.active_orderids
+                or self.close_order_status not in (Status.CANCELLED, Status.REJECTED)
+                or not self.close_orderid or self.close_orderid != expected_orderid
+                or not positions_verified):
+            return False
+        if not record_recovery_audit(
+            component="delta_hedge", target=self.vt_symbol,
+            orderid=self.close_orderid, status=self.close_order_status.name,
+            operator=operator, reason=reason,
+            context={"portfolio": self.portfolio_name, "close_volume": self.close_order_volume},
+            path=audit_path
+        ):
+            return False
+
+        if hasattr(self.main_engine, "write_log"):
+            self.main_engine.write_log(
+                f"Delta hedge recovery ACK by {operator}: {self.close_orderid}",
+                APP_NAME
+            )
+        self.close_reconciliation = None
+        self.close_orderid = None
+        self.close_order_status = None
+        self.close_order_volume = 0.0
+        return True
 
     def check_order_finished(self) -> bool:
         """没有活动委托时返回真。"""
@@ -568,7 +717,7 @@ class OptionHedgeEngine:
     def cancel_all(self) -> None:
         """逐个撤销仍能查到的活动委托。"""
         vt_orderid: str
-        for vt_orderid in self.active_orderids:
+        for vt_orderid in tuple(self.active_orderids):
             order: OrderData | None = self.main_engine.get_order(vt_orderid)
             if order:
                 req: CancelRequest = order.create_cancel_request()

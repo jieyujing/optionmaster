@@ -131,3 +131,5 @@ dmypy.json
 
 # Type checker / linter / test caches
 .ruff_cache/
+# Durable local operator recovery audit log (never commit trading operations)
+optionmaster_recovery_audit.jsonl

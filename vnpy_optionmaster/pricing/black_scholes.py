@@ -59,7 +59,7 @@ def calculate_delta(
     if t <= 0:
         return float(cp) if cp * (s - k) > 0 else 0.0
     if v <= 0:
-        return 0
+        return float(cp) if cp * (s - k * exp(-r * t)) > 0 else 0.0
 
     if not d1:
         d1 = calculate_d1(s, k, r, t, v)
@@ -98,8 +98,14 @@ def calculate_theta(
     annual_days: int = 240
 ) -> float:
     """计算期权 Theta。"""
-    if t <= 0 or v <= 0:
-        return 0
+    if t <= 0:
+        return 0.0
+    if v <= 0:
+        # d/d(calendar time) of max(cp*(S-Ke^(-rT)), 0) at fixed S.
+        discounted_strike: float = k * exp(-r * t)
+        if cp * (s - discounted_strike) > 0:
+            return -cp * r * discounted_strike
+        return 0.0
 
     if not d1:
         d1 = calculate_d1(s, k, r, t, v)
@@ -140,7 +146,8 @@ def calculate_greeks(
     """计算期权价格和希腊值。"""
     if t <= 0 or v <= 0:
         return (calculate_price(s, k, r, t, v, cp),
-                calculate_delta(s, k, r, t, v, cp), 0.0, 0.0, 0.0)
+                calculate_delta(s, k, r, t, v, cp), 0.0,
+                calculate_theta(s, k, r, t, v, cp), 0.0)
     d1: float = calculate_d1(s, k, r, t, v)
     price: float = calculate_price(s, k, r, t, v, cp, d1)
     delta: float = calculate_delta(s, k, r, t, v, cp, d1)

@@ -14,10 +14,22 @@ start: datetime = datetime.today()
 PUBLIC_HOLIDAYS: list[datetime] = [x for x in holidays if x >= start]
 
 
+def expiry_reached(option_expiry: datetime, now: datetime) -> bool:
+    """Preserve date-only expiries; honor exact times only when explicitly supplied."""
+    date_only = not any((
+        option_expiry.hour, option_expiry.minute,
+        option_expiry.second, option_expiry.microsecond
+    ))
+    if date_only:
+        return option_expiry.date() < now.date()
+    return option_expiry <= now
+
+
 def calculate_days_to_expiry(option_expiry: datetime) -> int:
     """从当天零点起向后逐日走到到期日，周末和上交所休市日不计数，返回计数（初值为 1）。"""
-    current_dt: datetime = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    if option_expiry.date() < current_dt.date():
+    now: datetime = datetime.now()
+    current_dt: datetime = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if expiry_reached(option_expiry, now):
         return 0
 
     days: int = 1

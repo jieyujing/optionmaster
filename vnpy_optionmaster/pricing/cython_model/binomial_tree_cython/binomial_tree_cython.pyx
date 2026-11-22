@@ -1,4 +1,5 @@
 from typing import Tuple
+from vnpy_optionmaster.pricing import binomial_tree as python_model
 import numpy as np
 
 cimport numpy as np
@@ -76,6 +77,8 @@ def calculate_price(
     int n = DEFAULT_STEP
 ) -> float:
     """Calculate option price"""
+    if t <= 0 or v <= 0:
+        return max(0.0, cp * (f - k))
     option_tree, underlying_tree = generate_tree(f, k, r, t, v, cp, n)
     return option_tree[0, 0]
 
@@ -90,6 +93,8 @@ def calculate_delta(
     int n = DEFAULT_STEP
 ) -> float:
     """Calculate option delta"""
+    if t <= 0 or v <= 0:
+        return float(cp) if cp * (f - k) > 0 else 0.0
     cdef double option_price_change, underlying_price_change
     cdef _delta, delta
 
@@ -111,6 +116,8 @@ def calculate_gamma(
     int n = DEFAULT_STEP
 ) -> float:
     """Calculate option gamma"""
+    if t <= 0 or v <= 0:
+        return 0.0
     cdef double gamma_delta_1, gamma_delta_2
     cdef double _gamma, gamma
 
@@ -136,6 +143,8 @@ def calculate_theta(
     int n = DEFAULT_STEP
 ) -> float:
     """Calcualte option theta"""
+    if t <= 0 or v <= 0:
+        return 0.0
     cdef double dt, theta
 
     option_tree, underlying_tree = generate_tree(f, k, r, t, v, cp, n)
@@ -156,6 +165,8 @@ def calculate_vega(
     int n = DEFAULT_STEP
 ) -> float:
     """Calculate option vega"""
+    if t <= 0 or v <= 0:
+        return 0.0
     cdef double price_1 = calculate_price(f, k, r, t, v, cp, n)
     cdef double price_2 = calculate_price(f, k, r, t, v * 1.001, cp, n)
     cdef double vega = (price_2 - price_1) / (v * 0.001)
@@ -172,6 +183,9 @@ def calculate_greeks(
     int n = DEFAULT_STEP
 ) -> Tuple[float, float, float, float, float]:
     """Calculate option price and greeks"""
+    if t <= 0 or v <= 0:
+        return (calculate_price(f, k, r, t, v, cp, n),
+                calculate_delta(f, k, r, t, v, cp, n), 0.0, 0.0, 0.0)
     cdef double dt = t / n
     cdef double price, delta, gamma, vega, theta
     cdef double _delta, _gamma
@@ -217,76 +231,5 @@ def calculate_impv(
     int cp,
     int n = DEFAULT_STEP
 ) -> float:
-    """Calculate option implied volatility"""
-    cdef double p, v, dx, vega, moneyness, v_base, adjustment, v_new
-    cdef bint meet
-
-    # Check option price must be positive
-    if price <= 0:
-        return 0
-
-    # Check if option price meets minimum value (exercise value)
-    meet = False
-
-    if cp == 1 and price > (f - k):
-        meet = True
-    elif cp == -1 and price > (k - f):
-        meet = True
-
-    # If minimum value not met, return 0
-    if not meet:
-        return 0
-
-    # Calculate implied volatility with Newton's method
-    # Smart initial guess based on moneyness
-    if cp == 1:
-        moneyness = f / k
-    else:
-        moneyness = k / f
-
-    v_base = (price / f) / sqrt(t) * 2.5
-
-    # Adjust based on moneyness
-    if moneyness < 0.9:
-        adjustment = 1 + (1 - moneyness) * 20
-    elif moneyness > 1.15:
-        adjustment = fmax(0.6, 1 - (moneyness - 1) * 0.2)
-    else:
-        adjustment = 1.0
-
-    v = v_base * adjustment
-    v = min(max(v, 0.2), 5.0)
-
-    for i in range(100):
-        # Calculate option price and vega with current guess
-        p = calculate_price(f, k, r, t, v, cp, n)
-        vega = calculate_vega(f, k, r, t, v, cp, n)
-
-        # Break loop if vega too close to 0
-        if not vega or fabs(vega) < 1e-10:
-            break
-
-        # Calculate error value
-        dx = (price - p) / vega
-
-        # Check if error value meets requirement
-        if fabs(dx) < 0.00001:
-            break
-
-        # Limit step size
-        dx = fmax(-0.5, min(0.5, dx))
-
-        # Calculate guessed implied volatility of next round
-        v_new = v + dx
-        if v_new <= 0:
-            v_new = v * 0.5
-        v = min(v_new, 10.0)
-
-    # Final check
-    if v <= 0:
-        return 0
-
-    # Round to 4 decimal places
-    v = round(v, 4)
-
-    return v
+    """Keep implied-volatility boundary handling identical to the Python model."""
+    return python_model.calculate_impv(price, f, k, r, t, cp, n)

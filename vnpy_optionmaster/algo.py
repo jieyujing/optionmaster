@@ -1,8 +1,10 @@
 """电子眼期权交易算法。"""
 from typing import TYPE_CHECKING
+from pathlib import Path
 
 from vnpy.trader.object import TickData, OrderData, TradeData
-from vnpy.trader.constant import Direction, Offset
+from vnpy.trader.constant import Direction, Offset, Status
+from .risk_safety import risk_snapshot_is_fresh, record_recovery_audit
 from vnpy.trader.utility import round_to
 
 from .base import OptionData, UnderlyingData
@@ -43,6 +45,13 @@ class ElectronicEyeAlgo:
         # Variables
         self.long_active_orderids: set[str] = set()
         self.short_active_orderids: set[str] = set()
+        # Prevent new opening orders until a preceding close is reflected in holdings.
+        self.pending_long_close_pos: float | None = None
+        self.pending_short_close_pos: float | None = None
+        self.pending_long_close_orderid: str | None = None
+        self.pending_short_close_orderid: str | None = None
+        self.pending_long_close_status: Status | None = None
+        self.pending_short_close_status: Status | None = None
 
         self.algo_spread: float = 0.0
         self.ref_price: float = 0.0
@@ -107,6 +116,7 @@ class ElectronicEyeAlgo:
             self.write_log("请先设置最大委托数量")
             return False
 
+        # Never clear an unresolved close merely because trading restarts.
         self.trading_active = True
 
         self.put_trading_event()
@@ -145,12 +155,24 @@ class ElectronicEyeAlgo:
             self.do_trading()
 
     def on_order(self, order: OrderData) -> None:
-        """委托不再活动时，从多头或空头活动委托中移除。"""
+        """记录精确平仓单的终态；过时回报不能覆盖终态。"""
         if not order.is_active():
-            if order.vt_orderid in self.long_active_orderids:
-                self.long_active_orderids.remove(order.vt_orderid)
-            elif order.vt_orderid in self.short_active_orderids:
-                self.short_active_orderids.remove(order.vt_orderid)
+            if (order.vt_orderid == self.pending_long_close_orderid
+                    and self.pending_long_close_status not in (Status.ALLTRADED, Status.CANCELLED, Status.REJECTED)):
+                self.pending_long_close_status = (
+                    order.status if order.status != Status.ALLTRADED
+                    or (self.pending_long_close_pos is not None and order.traded >= self.pending_long_close_pos)
+                    else Status.REJECTED
+                )
+            if (order.vt_orderid == self.pending_short_close_orderid
+                    and self.pending_short_close_status not in (Status.ALLTRADED, Status.CANCELLED, Status.REJECTED)):
+                self.pending_short_close_status = (
+                    order.status if order.status != Status.ALLTRADED
+                    or (self.pending_short_close_pos is not None and order.traded >= self.pending_short_close_pos)
+                    else Status.REJECTED
+                )
+            self.long_active_orderids.discard(order.vt_orderid)
+            self.short_active_orderids.discard(order.vt_orderid)
 
     def on_trade(self, trade: TradeData) -> None:
         """把成交方向、开平、数量、价格和委托号写入日志。"""
@@ -214,8 +236,18 @@ class ElectronicEyeAlgo:
             self.long_active_orderids.add(vt_orderid)
 
     def send_long(self, price: float, volume: int) -> None:
-        """没有空仓时买入开仓，空仓足够时买入平仓，否则先平掉空仓再买入剩余数量。"""
+        """先完成并核对空仓平仓，再允许新开多仓。"""
         option: OptionData = self.option
+        if self.long_active_orderids:
+            return
+        if self.pending_long_close_pos is not None:
+            if (self.pending_long_close_status != Status.ALLTRADED
+                    or option.short_pos != 0
+                    or option.net_pos != option.long_pos - option.short_pos):
+                return
+            self.pending_long_close_pos = None
+            self.pending_long_close_orderid = None
+            self.pending_long_close_status = None
 
         if not option.short_pos:
             self.buy(price, volume)
@@ -223,11 +255,24 @@ class ElectronicEyeAlgo:
             self.cover(price, volume)
         else:
             self.cover(price, option.short_pos)
-            self.buy(price, volume - option.short_pos)
+            if self.long_active_orderids:
+                self.pending_long_close_pos = option.short_pos
+                self.pending_long_close_orderid = next(iter(self.long_active_orderids))
+                self.pending_long_close_status = Status.SUBMITTING
 
     def send_short(self, price: float, volume: int) -> None:
-        """没有多仓时卖出开仓，多仓足够时卖出平仓，否则先平掉多仓再卖出剩余数量。"""
+        """先完成并核对多仓平仓，再允许新开空仓。"""
         option: OptionData = self.option
+        if self.short_active_orderids:
+            return
+        if self.pending_short_close_pos is not None:
+            if (self.pending_short_close_status != Status.ALLTRADED
+                    or option.long_pos != 0
+                    or option.net_pos != option.long_pos - option.short_pos):
+                return
+            self.pending_short_close_pos = None
+            self.pending_short_close_orderid = None
+            self.pending_short_close_status = None
 
         if not option.long_pos:
             self.short(price, volume)
@@ -235,23 +280,68 @@ class ElectronicEyeAlgo:
             self.sell(price, volume)
         else:
             self.sell(price, option.long_pos)
-            self.short(price, volume - option.long_pos)
+            if self.short_active_orderids:
+                self.pending_short_close_pos = option.long_pos
+                self.pending_short_close_orderid = next(iter(self.short_active_orderids))
+                self.pending_short_close_status = Status.SUBMITTING
 
     def cancel_order(self, vt_orderid: str) -> None:
         """写入撤单日志，并交给算法引擎撤单。"""
         self.write_log(f"委托撤单：[{vt_orderid}]")
         self.algo_engine.cancel_order(vt_orderid)
 
+    def acknowledge_failed_close(
+        self, direction: Direction, *, operator: str = "", reason: str = "",
+        expected_orderid: str = "", positions_verified: bool = False,
+        audit_path: Path | None = None
+    ) -> bool:
+        """Unlock a cancelled/rejected close only after durable named approval."""
+        if direction == Direction.LONG:
+            active, orderid, status = (
+                self.long_active_orderids, self.pending_long_close_orderid,
+                self.pending_long_close_status
+            )
+        elif direction == Direction.SHORT:
+            active, orderid, status = (
+                self.short_active_orderids, self.pending_short_close_orderid,
+                self.pending_short_close_status
+            )
+        else:
+            return False
+        if (self.trading_active or active
+                or status not in (Status.CANCELLED, Status.REJECTED)
+                or not orderid or orderid != expected_orderid
+                or not positions_verified):
+            return False
+        if not record_recovery_audit(
+            component="electronic_eye", target=self.vt_symbol,
+            orderid=orderid, status=status.name,
+            operator=operator, reason=reason,
+            context={"direction": direction.name},
+            path=audit_path
+        ):
+            return False
+        self.write_log(f"已人工确认异常平仓 [{orderid}]，操作人：{operator}")
+        if direction == Direction.LONG:
+            self.pending_long_close_pos = None
+            self.pending_long_close_orderid = None
+            self.pending_long_close_status = None
+        else:
+            self.pending_short_close_pos = None
+            self.pending_short_close_orderid = None
+            self.pending_short_close_status = None
+        return True
+
     def cancel_long(self) -> None:
         """撤销全部多头活动委托。"""
         vt_orderid: str
-        for vt_orderid in self.long_active_orderids:
+        for vt_orderid in tuple(self.long_active_orderids):
             self.cancel_order(vt_orderid)
 
     def cancel_short(self) -> None:
         """撤销全部空头活动委托。"""
         vt_orderid: str
-        for vt_orderid in self.short_active_orderids:
+        for vt_orderid in tuple(self.short_active_orderids):
             self.cancel_order(vt_orderid)
 
     def check_long_finished(self) -> bool:
@@ -292,7 +382,9 @@ class ElectronicEyeAlgo:
         self.put_pricing_event()
 
     def do_trading(self) -> None:
-        """允许做多且没有多头活动委托时狙击买入，允许做空且没有空头活动委托时狙击卖出。"""
+        """风险快照有效且委托结束时才允许提交新委托。"""
+        if not risk_snapshot_is_fresh(self.option):
+            return
         if self.long_allowed and self.check_long_finished():
             self.snipe_long()
 

@@ -1,5 +1,6 @@
 """期权组合、期权链、标的和期权合约数据。"""
 from datetime import datetime
+from math import isfinite
 from collections.abc import Callable
 from types import ModuleType
 from functools import lru_cache
@@ -12,7 +13,7 @@ from vnpy.trader.constant import Exchange, OptionType, Direction, Offset
 from vnpy.trader.converter import PositionHolding
 from vnpy.trader.utility import extract_vt_symbol
 
-from .time import calculate_days_to_expiry, ANNUAL_DAYS
+from .time import calculate_days_to_expiry, expiry_reached, ANNUAL_DAYS
 
 
 APP_NAME: str = "OptionMaster"
@@ -118,6 +119,7 @@ class OptionData(InstrumentData):
         self.bid_impv: float = 0
         self.ask_impv: float = 0
         self.mid_impv: float = 0
+        self.impv_valid: bool = False
         self.pricing_impv: float = 0
 
         # Greeks related
@@ -125,6 +127,9 @@ class OptionData(InstrumentData):
         self.theo_gamma: float = 0
         self.theo_theta: float = 0
         self.theo_vega: float = 0
+        # Greeks remain last-known values when the IV input is unavailable.
+        # This flag must be checked by every automatic risk-taking path.
+        self.greeks_valid: bool = False
 
         self.pos_value: float = 0
         self.pos_delta: float = 0
@@ -134,14 +139,17 @@ class OptionData(InstrumentData):
 
     def refresh_expiry(self) -> None:
         """Refresh remaining trading time when an overnight session crosses dates."""
-        today = datetime.now().date()
-        if today != self._expiry_date_checked:
+        now = datetime.now()
+        today = now.date()
+        if (today != self._expiry_date_checked
+                or (self.time_to_expiry > 0 and expiry_reached(self.option_expiry, now))):
             self.days_to_expiry = calculate_days_to_expiry(self.option_expiry)
             self.time_to_expiry = self.days_to_expiry / ANNUAL_DAYS
             self._expiry_date_checked = today
 
     def calculate_option_impv(self) -> None:
         """缺少行情、标的或标的中间价时返回，否则用标的中间价加调整量计算买价、卖价和中间价的隐含波动率。"""
+        self.impv_valid = False
         self.refresh_expiry()
         if not self.tick or not self.underlying:
             return
@@ -189,16 +197,20 @@ class OptionData(InstrumentData):
             self.time_to_expiry,
             self.option_type
         )
+        self.impv_valid = isfinite(self.mid_impv) and self.mid_impv > 0
 
     def calculate_theo_greeks(self) -> None:
-        """缺少标的、标的中间价或中间隐含波动率时返回，否则计算理论希腊值，delta 与 gamma 乘合约乘数，theta 再除以 240，vega 再除以 100。"""
+        """计算理论 Greek；不可计算时保留上一有效数值并标记失效。"""
+        self.greeks_valid = False
         self.refresh_expiry()
         if not self.underlying:
             return
 
         underlying_price: float = self.underlying.mid_price
-        if not underlying_price or not self.mid_impv:
-            self.theo_delta = self.theo_gamma = self.theo_theta = self.theo_vega = 0.0
+        if (not isfinite(underlying_price) or underlying_price <= 0
+                or not isfinite(self.mid_impv) or self.mid_impv <= 0
+                or not getattr(self, "impv_valid", True)
+                or self.time_to_expiry <= 0):
             return
         underlying_price += self.underlying_adjustment
 
@@ -215,10 +227,14 @@ class OptionData(InstrumentData):
             self.option_type
         )
 
+        if not all(isfinite(value) for value in (delta, gamma, theta, vega)):
+            return
+
         self.theo_delta = delta * self.size
         self.theo_gamma = gamma * self.size
         self.theo_theta = theta * self.size / 240
         self.theo_vega = vega * self.size / 100
+        self.greeks_valid = True
 
     def calculate_pos_greeks(self) -> None:
         """有行情时用最新价乘合约乘数和净持仓得到持仓市值，并把理论希腊值乘净持仓。"""
@@ -528,8 +544,10 @@ class ChainData:
         if not self.atm_price:
             return
 
-        atm_call: OptionData = self.calls[self.atm_index]
-        atm_put: OptionData = self.puts[self.atm_index]
+        atm_call: OptionData | None = self.calls.get(self.atm_index)
+        atm_put: OptionData | None = self.puts.get(self.atm_index)
+        if atm_call is None or atm_put is None:
+            return
 
         call_price: float = atm_call.mid_price
         put_price: float = atm_put.mid_price
@@ -539,8 +557,10 @@ class ChainData:
 
     def update_synthetic_price(self) -> None:
         """用平值认购中间价减认沽中间价加行权价更新标的中间价，更新链上期权并推送合成行情。"""
-        call: OptionData = self.calls[self.atm_index]
-        put: OptionData = self.puts[self.atm_index]
+        call: OptionData | None = self.calls.get(self.atm_index)
+        put: OptionData | None = self.puts.get(self.atm_index)
+        if call is None or put is None or not self.atm_price:
+            return
 
         self.underlying.mid_price = call.mid_price - put.mid_price + self.atm_price
         self.update_underlying_tick()

@@ -1,10 +1,13 @@
 from collections.abc import Callable
 from datetime import datetime
+from types import SimpleNamespace
 from typing import cast
 
-from vnpy.trader.constant import Direction, Exchange, Offset, OrderType, Product
+from vnpy.event import Event
+
+from vnpy.trader.constant import Direction, Exchange, Offset, OrderType, Product, Status
 from vnpy.trader.converter import PositionHolding
-from vnpy.trader.object import ContractData, OrderRequest, TickData
+from vnpy.trader.object import ContractData, OrderData, OrderRequest, TickData
 
 from vnpy_optionmaster.base import APP_NAME
 from vnpy_optionmaster.engine import OptionEngine, OptionHedgeEngine
@@ -69,6 +72,7 @@ class _MainEngine:
 class _Portfolio:
     def __init__(self, pos_delta: float) -> None:
         self.pos_delta: float = pos_delta
+        self.options: dict[str, SimpleNamespace] = {}
 
 
 class _Instrument:
@@ -141,7 +145,7 @@ def _tick(contract: ContractData) -> TickData:
         gateway_name=contract.gateway_name,
         symbol=contract.symbol,
         exchange=contract.exchange,
-        datetime=datetime(2026, 10, 4, 9, 30),
+        datetime=datetime.now(),
         ask_price_1=_ASK_PRICE,
         ask_volume_1=10,
         bid_price_1=_BID_PRICE,
@@ -172,6 +176,7 @@ def _run_hedge(
     short_pos_frozen: float,
     theo_delta: float = _THEO_DELTA,
     min_volume: float = 1,
+    invalid_option: bool = False,
 ) -> _HedgeResult:
     contract: ContractData = _contract(min_volume)
     tick: TickData = _tick(contract)
@@ -183,9 +188,12 @@ def _run_hedge(
         short_pos_frozen,
     )
     main_engine: _MainEngine = _MainEngine(contract, tick, holding)
+    portfolio = _Portfolio(pos_delta)
+    if invalid_option:
+        portfolio.options["bad_option"] = SimpleNamespace(net_pos=1, greeks_valid=False)
     option_engine: _OptionEngine = _OptionEngine(
         main_engine,
-        _Portfolio(pos_delta),
+        portfolio,
         _Instrument(theo_delta),
     )
     hedge: OptionHedgeEngine = OptionHedgeEngine(cast(OptionEngine, option_engine))
@@ -335,7 +343,7 @@ class TestHedgeOrders:
             volume,
         )
 
-    def test_close_then_open_when_opposite_available_is_smaller(self) -> None:
+    def test_close_then_wait_when_opposite_available_is_smaller(self) -> None:
         pos_delta: float = -6.0
         volume: float = _order_volume(pos_delta)
         short_pos: float = 5.0
@@ -350,12 +358,12 @@ class TestHedgeOrders:
             short_pos=short_pos,
             short_pos_frozen=short_pos_frozen,
         )
-        _assert_close_then_open(
+        _assert_single(
             long_result,
             Direction.LONG,
+            Offset.CLOSE,
             _long_hedge_price(),
             available,
-            volume,
         )
 
         pos_delta = 14.0
@@ -372,12 +380,12 @@ class TestHedgeOrders:
             short_pos=0.0,
             short_pos_frozen=0.0,
         )
-        _assert_close_then_open(
+        _assert_single(
             short_result,
             Direction.SHORT,
+            Offset.CLOSE,
             _short_hedge_price(),
             available,
-            volume,
         )
 
     def test_no_order_when_hedge_volume_below_min_volume(self) -> None:
@@ -424,3 +432,46 @@ def test_fractional_target_uses_whole_contracts() -> None:
         short_pos_frozen=0.0,
     )
     _assert_single(result, Direction.LONG, Offset.OPEN, _long_hedge_price(), 1.0)
+
+
+def test_invalid_option_greeks_prevent_automatic_hedge() -> None:
+    result = _run_hedge(
+        pos_delta=-6.0, long_pos=0.0, long_pos_frozen=0.0,
+        short_pos=0.0, short_pos_frozen=0.0, invalid_option=True,
+    )
+    assert not result.calls
+
+
+def test_partial_close_must_not_open_until_filled_and_reconciled() -> None:
+    result = _run_hedge(
+        pos_delta=-6.0, long_pos=0.0, long_pos_frozen=0.0,
+        short_pos=2.0, short_pos_frozen=0.0,
+    )
+    assert len(result.calls) == 1
+    assert result.calls[0][0].offset == Offset.CLOSE
+    assert result.calls[0][0].volume == 2.0
+
+    # A real ALLTRADED report is necessary, but still insufficient until holdings refresh.
+    filled_order = OrderData(
+        gateway_name=result.contract.gateway_name,
+        symbol=result.contract.symbol,
+        exchange=result.contract.exchange,
+        orderid="1",
+        direction=Direction.LONG,
+        offset=Offset.CLOSE,
+        volume=2.0,
+        traded=2.0,
+        status=Status.ALLTRADED,
+    )
+    result.hedge.process_order_event(Event("eOrder", filled_order))
+    result.hedge.run()
+    assert len(result.calls) == 1
+
+    # After actual fill and holding/portfolio reconciliation, calculate remaining need anew.
+    engine = cast(_OptionEngine, result.hedge.option_engine)
+    engine.main_engine.book.holding.short_pos = 0.0
+    engine._portfolio.pos_delta = -2.0
+    result.hedge.run()
+    assert len(result.calls) == 2
+    assert result.calls[1][0].offset == Offset.OPEN
+    assert result.calls[1][0].volume == 3.0

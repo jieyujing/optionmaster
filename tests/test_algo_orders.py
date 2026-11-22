@@ -2,8 +2,8 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import cast
 
-from vnpy.trader.constant import Direction, Exchange, Offset, OrderType, Product
-from vnpy.trader.object import ContractData, OrderRequest, TickData
+from vnpy.trader.constant import Direction, Exchange, Offset, OrderType, Product, Status
+from vnpy.trader.object import ContractData, OrderData, OrderRequest, TickData
 
 from vnpy_optionmaster.algo import ElectronicEyeAlgo
 from vnpy_optionmaster.base import APP_NAME, OptionData
@@ -29,8 +29,9 @@ class _EventEngine:
 
 
 class _UnderlyingView:
-    def __init__(self) -> None:
+    def __init__(self, tick: TickData | None = None) -> None:
         self.vt_symbol: str = "510050.SSE"
+        self.tick: TickData | None = tick
 
 
 class _OptionView:
@@ -38,8 +39,10 @@ class _OptionView:
         self.vt_symbol: str = vt_symbol
         self.pricetick: float = 0.0001
         self.min_volume: float = 1.0
-        self.underlying: _UnderlyingView = _UnderlyingView()
+        self.underlying: _UnderlyingView = _UnderlyingView(tick)
+        self.greeks_valid: bool = True
         self.short_pos: int = short_pos
+        self.long_pos: int = max(0, net_pos)
         self.net_pos: int = net_pos
         self.tick: TickData | None = tick
 
@@ -88,7 +91,7 @@ def _tick(ask_volume: float) -> TickData:
         gateway_name=_GATEWAY_NAME,
         symbol=_SYMBOL,
         exchange=Exchange.SSE,
-        datetime=datetime(2026, 10, 4, 9, 30),
+        datetime=datetime.now(),
         ask_price_1=_ASK_PRICE,
         ask_volume_1=ask_volume,
         bid_price_1=1.0,
@@ -188,7 +191,7 @@ class TestAlgoOrders:
         _assert_long_order(main_engine.calls[0][0], Offset.CLOSE, price, volume)
         assert algo_engine.order_algo_map[main_engine.orderids[0]] is algo
 
-    def test_send_long_closes_then_opens_when_short_is_partial(self) -> None:
+    def test_send_long_only_closes_when_short_is_partial(self) -> None:
         price: float = 1.8
         volume: int = 8
         short_pos: int = 3
@@ -200,14 +203,11 @@ class TestAlgoOrders:
 
         algo.send_long(price, volume)
 
-        assert len(main_engine.calls) == 2
+        assert len(main_engine.calls) == 1
         close_req: OrderRequest = main_engine.calls[0][0]
-        open_req: OrderRequest = main_engine.calls[1][0]
         _assert_long_order(close_req, Offset.CLOSE, price, short_pos)
-        _assert_long_order(open_req, Offset.OPEN, price, volume - short_pos)
         assert close_req.volume > 0
-        assert open_req.volume > 0
-        assert [algo_engine.order_algo_map[vt_orderid] for vt_orderid in main_engine.orderids] == [algo, algo]
+        assert algo_engine.order_algo_map[main_engine.orderids[0]] is algo
 
     def test_snipe_long_volume_within_left_ask_and_max_size(self) -> None:
         cases: tuple[tuple[int, float, int], ...] = (
@@ -267,4 +267,65 @@ def test_zero_quote_liquidity_does_not_send_order() -> None:
     algo.max_order_size = 4
     algo.algo_bid_price = _ALGO_BID_PRICE
     algo.snipe_long()
+    assert not main_engine.calls
+
+
+def test_electronic_eye_defers_open_until_long_close_reconciled() -> None:
+    algo, main_engine, _ = _make_algo(short_pos=3, net_pos=-3, tick=None)
+    algo.send_long(1.8, 8)
+    assert len(main_engine.calls) == 1
+    _assert_long_order(main_engine.calls[0][0], Offset.CLOSE, 1.8, 3)
+
+    algo.on_order(OrderData(
+        gateway_name=main_engine.contract.gateway_name,
+        symbol=main_engine.contract.symbol,
+        exchange=main_engine.contract.exchange,
+        orderid="1", direction=Direction.LONG, offset=Offset.CLOSE,
+        volume=3, traded=3, status=Status.ALLTRADED,
+    ))
+    algo.send_long(1.8, 8)
+    assert len(main_engine.calls) == 1  # terminal order alone is not position refresh
+
+    algo.option.short_pos = 0
+    algo.option.net_pos = 0
+    algo.send_long(1.8, 5)
+    assert len(main_engine.calls) == 2
+    _assert_long_order(main_engine.calls[1][0], Offset.OPEN, 1.8, 5)
+
+
+def test_electronic_eye_defers_open_until_short_close_reconciled() -> None:
+    algo, main_engine, _ = _make_algo(short_pos=0, net_pos=3, tick=None)
+    algo.send_short(1.8, 8)
+    assert len(main_engine.calls) == 1
+    assert main_engine.calls[0][0].offset == Offset.CLOSE
+    assert main_engine.calls[0][0].volume == 3
+
+    algo.on_order(OrderData(
+        gateway_name=main_engine.contract.gateway_name,
+        symbol=main_engine.contract.symbol,
+        exchange=main_engine.contract.exchange,
+        orderid="1", direction=Direction.SHORT, offset=Offset.CLOSE,
+        volume=3, traded=3, status=Status.ALLTRADED,
+    ))
+    algo.send_short(1.8, 8)
+    assert len(main_engine.calls) == 1
+
+    algo.option.long_pos = 0
+    algo.option.net_pos = 0
+    algo.send_short(1.8, 5)
+    assert len(main_engine.calls) == 2
+    assert main_engine.calls[1][0].offset == Offset.OPEN
+    assert main_engine.calls[1][0].volume == 5
+
+
+def test_invalid_greeks_block_electronic_eye_trading() -> None:
+    algo, main_engine, _ = _make_algo(short_pos=0, net_pos=0, tick=_tick(10))
+    algo.option.greeks_valid = False
+    algo.long_allowed = True
+    algo.short_allowed = False
+    algo.algo_bid_price = _ALGO_BID_PRICE
+    algo.max_pos = 5
+    algo.target_pos = 0
+    algo.max_order_size = 5
+    algo.do_trading()
     assert not main_engine.calls

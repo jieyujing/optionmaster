@@ -59,7 +59,7 @@ def calculate_delta(
     if t <= 0:
         return float(cp) if cp * (s - k) > 0 else 0.0
     if v <= 0:
-        return 0
+        return float(cp) * exp(-r * t) if cp * (s - k) > 0 else 0.0
 
     if not d1:
         d1 = calculate_d1(s, k, r, t, v)
@@ -97,8 +97,11 @@ def calculate_theta(
     d1: float = 0.0
 ) -> float:
     """计算期权 Theta。"""
-    if t <= 0 or v <= 0:
-        return 0
+    if t <= 0:
+        return 0.0
+    if v <= 0:
+        # Even at zero volatility, deterministic discounted payoff decays.
+        return r * calculate_price(s, k, r, t, v, cp)
 
     if not d1:
         d1 = calculate_d1(s, k, r, t, v)
@@ -139,7 +142,8 @@ def calculate_greeks(
     """计算期权价格和希腊值。"""
     if t <= 0 or v <= 0:
         return (calculate_price(s, k, r, t, v, cp),
-                calculate_delta(s, k, r, t, v, cp), 0.0, 0.0, 0.0)
+                calculate_delta(s, k, r, t, v, cp), 0.0,
+                calculate_theta(s, k, r, t, v, cp), 0.0)
     d1: float = calculate_d1(s, k, r, t, v)
     price: float = calculate_price(s, k, r, t, v, cp, d1)
     delta: float = calculate_delta(s, k, r, t, v, cp, d1)

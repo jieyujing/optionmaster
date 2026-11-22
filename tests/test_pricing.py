@@ -192,3 +192,45 @@ def test_implied_volatility_round_trip_deep_otm(model: ModuleType) -> None:
 @pytest.mark.parametrize("model", [_BLACK_SCHOLES, _BLACK_76, _BINOMIAL_TREE])
 def test_impv_at_expiry_has_no_volatility(model: ModuleType) -> None:
     assert model.calculate_impv(1.0, 100.0, 100.0, 0.02, 0.0, 1) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("model", "expected_scale"),
+    [(_BLACK_76, exp(-0.05 * 0.5)), (_BLACK_SCHOLES, 1.0)],
+)
+@pytest.mark.parametrize(
+    ("spot", "cp", "expected_sign"),
+    [(105.0, 1, 1.0), (95.0, -1, -1.0), (95.0, 1, 0.0), (105.0, -1, 0.0)],
+)
+def test_zero_volatility_itm_delta(
+    model: ModuleType, expected_scale: float, spot: float, cp: int, expected_sign: float
+) -> None:
+    expected = expected_scale * expected_sign
+    assert model.calculate_delta(spot, 100.0, 0.05, 0.5, 0.0, cp) == pytest.approx(expected)
+    greeks = model.calculate_greeks(spot, 100.0, 0.05, 0.5, 0.0, cp)
+    assert greeks[1] == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    ("model", "spot", "cp"),
+    [
+        (_BLACK_76, 110.0, 1),
+        (_BLACK_76, 90.0, -1),
+        (_BLACK_SCHOLES, 110.0, 1),
+        (_BLACK_SCHOLES, 90.0, -1),
+    ],
+)
+def test_zero_volatility_theta_matches_calendar_time_finite_difference(
+    model: ModuleType, spot: float, cp: int
+) -> None:
+    """At positive time, deterministic discounted payoff still has time sensitivity."""
+    strike, rate, maturity, sigma = 100.0, 0.05, 0.5, 0.0
+    dt = 1e-5
+    expected = -(
+        model.calculate_price(spot, strike, rate, maturity + dt, sigma, cp)
+        - model.calculate_price(spot, strike, rate, maturity - dt, sigma, cp)
+    ) / (2.0 * dt)
+    assert abs(expected) > 0.01
+    theta = model.calculate_theta(spot, strike, rate, maturity, sigma, cp)
+    assert theta == pytest.approx(expected, abs=1e-7)
+    assert model.calculate_greeks(spot, strike, rate, maturity, sigma, cp)[3] == pytest.approx(expected, abs=1e-7)

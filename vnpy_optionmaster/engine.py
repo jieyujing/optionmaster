@@ -1,5 +1,6 @@
 """期权主引擎以及 Delta 对冲、电子眼和风控。"""
 from copy import copy
+from math import floor, isfinite
 from collections import defaultdict
 from types import ModuleType
 from typing import cast
@@ -32,15 +33,9 @@ from .base import (
     InstrumentData, PortfolioData, OptionData, UnderlyingData, ChainData,
     get_underlying_prefix
 )
-try:
-    from .pricing import black_76_cython as black_76                # type: ignore
-    from .pricing import binomial_tree_cython as binomial_tree      # type: ignore
-    from .pricing import black_scholes_cython as black_scholes      # type: ignore
-except ImportError:
-    from .pricing import (
-        black_76, binomial_tree, black_scholes
-    )
-    print("Faile to import cython option pricing model, please rebuild with cython in cmd.")
+# Prefer the audited Python implementations: checked-in Cython binaries may be stale.
+# Restore the Cython acceleration only after rebuilding and cross-testing the models.
+from .pricing import black_76, binomial_tree, black_scholes
 from .algo import ElectronicEyeAlgo
 
 
@@ -296,7 +291,6 @@ class OptionEngine(BaseEngine):
         if portfolio_name in self.active_portfolios:
             return False
         portfolio: PortfolioData = self.get_portfolio(portfolio_name)
-        self.active_portfolios[portfolio_name] = portfolio
 
         # Subscribe market data
         underlying: UnderlyingData
@@ -319,17 +313,26 @@ class OptionEngine(BaseEngine):
         # Update position volume
         instrument: InstrumentData
         for instrument in self.instruments.values():
-            contract: ContractData = self.main_engine.get_contract(instrument.vt_symbol)            # type: ignore
-            converter: OffsetConverter = self.main_engine.get_converter(contract.gateway_name)      # type: ignore
-            holding: PositionHolding = converter.get_position_holding(instrument.vt_symbol)         # type: ignore
+            contract: ContractData | None = self.main_engine.get_contract(instrument.vt_symbol)
+            if contract is None:
+                raise RuntimeError(f"Missing contract for {instrument.vt_symbol}")
+            converter: OffsetConverter | None = self.main_engine.get_converter(contract.gateway_name)
+            if converter is None:
+                raise RuntimeError(f"Missing position converter for {contract.gateway_name}")
+            holding: PositionHolding | None = converter.get_position_holding(instrument.vt_symbol)
 
             if holding:
                 instrument.update_holding(holding)
 
         portfolio.calculate_pos_greeks()
 
-        # Load chain adjustment and pricing impv data
-        self.load_data()
+        # load_data uses active_portfolios; roll back on failure so retry works.
+        self.active_portfolios[portfolio_name] = portfolio
+        try:
+            self.load_data()
+        except Exception:
+            self.active_portfolios.pop(portfolio_name, None)
+            raise
 
         return True
 
@@ -447,6 +450,7 @@ class OptionHedgeEngine:
 
         self.active = False
         self.timer_count = 0
+        self.cancel_all()
 
     def run(self) -> None:
         """有未完成委托时全部撤单并返回；delta 在目标加减阈值内、无行情或对冲量小于最小下单量时返回；否则用超价限价单对冲，反向可平量足够时平仓，没有可平量时开仓，不足时先平后开。"""
@@ -464,24 +468,31 @@ class OptionHedgeEngine:
 
         # Calculate volume of contract to hedge
         delta_to_hedge: float = self.delta_target - portfolio.pos_delta
-        instrument: UnderlyingData = cast(UnderlyingData, self.option_engine.get_instrument(self.vt_symbol))
+        instrument = self.option_engine.get_instrument(self.vt_symbol)
+        if not isinstance(instrument, UnderlyingData) or not instrument.theo_delta:
+            return
 
         hedge_volume: float = delta_to_hedge / instrument.theo_delta
+        if not isfinite(hedge_volume):
+            return
 
         # Send hedge orders
         tick: TickData | None = self.main_engine.get_tick(self.vt_symbol)
         if not tick:
             return
 
-        contract: ContractData = cast(ContractData, self.main_engine.get_contract(self.vt_symbol))
+        contract: ContractData | None = self.main_engine.get_contract(self.vt_symbol)
+        if contract is None or contract.min_volume <= 0 or contract.pricetick <= 0:
+            return
 
         converter: OffsetConverter | None = self.main_engine.get_converter(contract.gateway_name)
         holding: PositionHolding | None = None
         if converter:
             holding = converter.get_position_holding(self.vt_symbol)
 
-        # Check if hedge volume meets contract minimum trading volume
-        if abs(hedge_volume) < contract.min_volume:
+        # Never submit a fractional contract below or between lot increments.
+        order_volume: float = floor(abs(hedge_volume) / contract.min_volume + 1e-9) * contract.min_volume
+        if order_volume < contract.min_volume:
             return
 
         if hedge_volume > 0:
@@ -501,7 +512,8 @@ class OptionHedgeEngine:
             else:
                 available = 0
 
-        order_volume: float = abs(hedge_volume)
+        if not isfinite(price) or price <= 0:
+            return
 
         req: OrderRequest = OrderRequest(
             symbol=contract.symbol,
@@ -514,28 +526,34 @@ class OptionHedgeEngine:
         )
 
         # Close positon if opposite available is enough
-        if available > order_volume:
+        available = max(0.0, available)
+        available = floor(available / contract.min_volume + 1e-9) * contract.min_volume
+        if available >= order_volume:
             req.offset = Offset.CLOSE
             vt_orderid: str = self.main_engine.send_order(req, contract.gateway_name)
-            self.active_orderids.add(vt_orderid)
+            if vt_orderid:
+                self.active_orderids.add(vt_orderid)
         # Open position if no oppsite available
         elif not available:
             req.offset = Offset.OPEN
             vt_orderid = self.main_engine.send_order(req, contract.gateway_name)
-            self.active_orderids.add(vt_orderid)
+            if vt_orderid:
+                self.active_orderids.add(vt_orderid)
         # Else close all opposite available and open left volume
         else:
             close_req: OrderRequest = copy(req)
             close_req.offset = Offset.CLOSE
             close_req.volume = available
             close_orderid: str = self.main_engine.send_order(close_req, contract.gateway_name)
-            self.active_orderids.add(close_orderid)
+            if close_orderid:
+                self.active_orderids.add(close_orderid)
 
             open_req: OrderRequest = copy(req)
             open_req.offset = Offset.OPEN
             open_req.volume = order_volume - available
             open_orderid: str = self.main_engine.send_order(open_req, contract.gateway_name)
-            self.active_orderids.add(open_orderid)
+            if open_orderid:
+                self.active_orderids.add(open_orderid)
 
     def check_order_finished(self) -> bool:
         """没有活动委托时返回真。"""
@@ -573,13 +591,12 @@ class OptionAlgoEngine:
 
     def init_engine(self, portfolio_name: str) -> None:
         """已经创建过算法时返回，否则为该组合的每个期权创建一个电子眼算法。"""
-        if self.algos:
-            return
-
         portfolio: PortfolioData = self.option_engine.get_portfolio(portfolio_name)
 
         option: OptionData
         for option in portfolio.options.values():
+            if option.vt_symbol in self.algos:
+                continue
             algo: ElectronicEyeAlgo = ElectronicEyeAlgo(self, option)
             self.algos[option.vt_symbol] = algo
 
@@ -691,7 +708,12 @@ class OptionAlgoEngine:
     ) -> str:
         """找不到合约时返回空字符串，否则以限价单发出并记下委托所属算法。"""
         contract: ContractData | None = self.main_engine.get_contract(vt_symbol)
-        if not contract:
+        if not contract or not isfinite(price) or price <= 0 or not isfinite(volume):
+            return ""
+        if volume <= 0 or contract.min_volume <= 0:
+            return ""
+        steps = volume / contract.min_volume
+        if abs(steps - round(steps)) > 1e-8:
             return ""
 
         req: OrderRequest = OrderRequest(
@@ -706,7 +728,8 @@ class OptionAlgoEngine:
         )
 
         vt_orderid: str = self.main_engine.send_order(req, contract.gateway_name)
-        self.order_algo_map[vt_orderid] = algo
+        if vt_orderid:
+            self.order_algo_map[vt_orderid] = algo
 
         return vt_orderid
 

@@ -1,8 +1,8 @@
 """Black-76 期权定价。"""
 from collections.abc import Callable
 
-from scipy import stats
-from math import log, pow, sqrt, exp
+from scipy import stats, optimize
+from math import log, pow, sqrt, exp, isfinite
 
 cdf: Callable[..., float] = stats.norm.cdf
 pdf: Callable[..., float] = stats.norm.pdf
@@ -30,6 +30,10 @@ def calculate_price(
     d1: float = 0.0
 ) -> float:
     """计算期权价格。"""
+    # The expiry payoff is defined even when the model's d1 is not.
+    if t <= 0:
+        return max(0.0, cp * (s - k))
+
     # Return option space value if volatility not positive
     if v <= 0:
         return max(0, cp * (s - k)) * exp(-r * t)
@@ -52,6 +56,8 @@ def calculate_delta(
     d1: float = 0.0
 ) -> float:
     """计算期权 Delta。"""
+    if t <= 0:
+        return float(cp) if cp * (s - k) > 0 else 0.0
     if v <= 0:
         return 0
 
@@ -71,7 +77,7 @@ def calculate_gamma(
     d1: float = 0.0
 ) -> float:
     """计算期权 Gamma。"""
-    if v <= 0:
+    if t <= 0 or v <= 0:
         return 0
 
     if not d1:
@@ -91,16 +97,16 @@ def calculate_theta(
     d1: float = 0.0
 ) -> float:
     """计算期权 Theta。"""
-    if v <= 0:
+    if t <= 0 or v <= 0:
         return 0
 
     if not d1:
         d1 = calculate_d1(s, k, r, t, v)
     d2: float = d1 - v * sqrt(t)
 
-    theta: float = -s * exp(-r * t) * pdf(d1) * v / (2 * sqrt(t)) \
-        - cp * r * s * exp(-r * t) * cdf(cp * d1) \
-        + cp * r * k * exp(-r * t) * cdf(cp * d2)
+    # Calendar-time theta at fixed futures price: the carry term is +r * price.
+    theta: float = (-s * exp(-r * t) * pdf(d1) * v / (2 * sqrt(t))
+                    + r * calculate_price(s, k, r, t, v, cp, d1))
     return theta
 
 
@@ -113,7 +119,7 @@ def calculate_vega(
     d1: float = 0.0
 ) -> float:
     """计算期权 Vega。"""
-    if v <= 0:
+    if t <= 0 or v <= 0:
         return 0
 
     if not d1:
@@ -132,6 +138,9 @@ def calculate_greeks(
     cp: int
 ) -> tuple[float, float, float, float, float]:
     """计算期权价格和希腊值。"""
+    if t <= 0 or v <= 0:
+        return (calculate_price(s, k, r, t, v, cp),
+                calculate_delta(s, k, r, t, v, cp), 0.0, 0.0, 0.0)
     d1: float = calculate_d1(s, k, r, t, v)
     price: float = calculate_price(s, k, r, t, v, cp, d1)
     delta: float = calculate_delta(s, k, r, t, v, cp, d1)
@@ -149,69 +158,36 @@ def calculate_impv(
     t: float,
     cp: int
 ) -> float:
-    """计算期权隐含波动率。"""
-    # Check option price must be positive
-    if price <= 0:
-        return 0
+    """反解隐含波动率；无套利边界外或求根失败时返回 0。"""
+    if (not all(isfinite(x) for x in (price, s, k, r, t))
+            or price <= 0 or s <= 0 or k <= 0 or t <= 0
+            or cp not in (-1, 1)):
+        return 0.0
 
-    # Check if option price meets minimum value (exercise value)
-    meet: bool = price > cp * (s - k) * exp(-r * t)
+    discount: float = exp(-r * t)
+    lower: float = max(0.0, cp * (s - k)) * discount
+    upper: float = (s if cp == 1 else k) * discount
+    if not lower < price < upper:
+        return 0.0
 
-    # If minimum value not met, return 0
-    if not meet:
-        return 0
+    def residual(volatility: float) -> float:
+        return calculate_price(s, k, r, t, volatility, cp) - price
 
-    # Calculate implied volatility with Newton's method
-    # Smart initial guess based on moneyness
-    if cp == 1:
-        moneyness: float = s / k
-    else:
-        moneyness = k / s
+    try:
+        min_vol: float = 1e-8
+        max_vol: float = 10.0
+        f_min: float = residual(min_vol)
+        f_max: float = residual(max_vol)
+        if f_min > 0 or f_max < 0:
+            return 0.0
+        if abs(f_min) < 1e-12:
+            return 0.0
+        volatility: float = float(optimize.brentq(
+            residual, min_vol, max_vol, xtol=1e-10, maxiter=100
+        ))
+        if abs(residual(volatility)) > max(1e-8, price * 1e-7):
+            return 0.0
+    except (ValueError, OverflowError, ZeroDivisionError):
+        return 0.0
 
-    v_base: float = (price / s) / sqrt(t) * 2.5
-
-    # Adjust based on moneyness
-    if moneyness < 0.9:
-        adjustment: float = (1 + (1 - moneyness) * 20)
-    elif moneyness > 1.15:
-        adjustment = max(0.6, 1 - (moneyness - 1) * 0.2)
-    else:
-        adjustment = 1.0
-
-    v: float = v_base * adjustment
-    v = min(max(v, 0.2), 5.0)
-
-    _i: int
-    for _i in range(100):
-        # Calculate option price and vega with current guess
-        p: float = calculate_price(s, k, r, t, v, cp)
-        vega: float = calculate_vega(s, k, r, t, v)
-
-        # Break loop if vega too close to 0
-        if not vega or abs(vega) < 1e-10:
-            break
-
-        # Calculate error value
-        dx: float = (price - p) / vega
-
-        # Check if error value meets requirement
-        if abs(dx) < 0.00001:
-            break
-
-        # Limit step size
-        dx = max(-0.5, min(0.5, dx))
-
-        # Calculate guessed implied volatility of next round
-        v_new: float = v + dx
-        if v_new <= 0:
-            v_new = v * 0.5
-        v = min(v_new, 10.0)
-
-    # Final check
-    if v <= 0:
-        return 0
-
-    # Round to 4 decimal places
-    v = round(v, 4)
-
-    return v
+    return round(volatility, 4)

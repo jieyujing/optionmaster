@@ -888,7 +888,7 @@ class PricingVolatilityManager(QtWidgets.QWidget):
             call: OptionData = chain.calls[index]
             put: OptionData = chain.puts[index]
 
-            if index >= atm_index:
+            if call.strike_price >= chain.atm_price:
                 otm: OptionData = call
             else:
                 otm = put
@@ -915,21 +915,30 @@ class PricingVolatilityManager(QtWidgets.QWidget):
             cells: dict = self.cells[(chain_symbol, index)]
 
             if not cells["check"].isChecked():
-                if index >= atm_index:
+                if call.strike_price >= chain.atm_price:
                     otm: OptionData = call
                 else:
                     otm = put
 
-                strike_prices.append(otm.strike_price)
-                pricing_impvs.append(otm.pricing_impv)
+                if otm.strike_price > 0 and otm.pricing_impv > 0:
+                    strike_prices.append(otm.strike_price)
+                    pricing_impvs.append(otm.pricing_impv)
 
-        cs: interpolate.CubicSpline = interpolate.CubicSpline(strike_prices, pricing_impvs)
+        if len(strike_prices) < 2:
+            return
+
+        samples: list[tuple[float, float]] = sorted(zip(strike_prices, pricing_impvs))
+        if any(right[0] <= left[0] for left, right in zip(samples, samples[1:])):
+            return
+        sorted_strikes, sorted_impvs = zip(*samples)
+        # Shape-preserving interpolation avoids negative IV overshoots.
+        cs = interpolate.PchipInterpolator(sorted_strikes, sorted_impvs)
 
         for index in chain.indexes:
             call = chain.calls[index]
             put = chain.puts[index]
 
-            new_impv: float = float(cs(call.strike_price))
+            new_impv: float = max(0.0, float(cs(call.strike_price)))
             call.pricing_impv = new_impv
             put.pricing_impv = new_impv
 
@@ -978,7 +987,7 @@ class PricingVolatilityManager(QtWidgets.QWidget):
 
         index: str
         for index in chain.indexes:
-            if index >= atm_index:
+            if chain.calls[index].strike_price >= chain.atm_price:
                 otm: OptionData = chain.calls[index]
             else:
                 otm = chain.puts[index]
@@ -999,7 +1008,7 @@ class PricingVolatilityManager(QtWidgets.QWidget):
         for index in chain.indexes:
             call: OptionData = chain.calls[index]
             put: OptionData = chain.puts[index]
-            if index >= atm_index:
+            if call.strike_price >= chain.atm_price:
                 otm: OptionData = call
             else:
                 otm = put

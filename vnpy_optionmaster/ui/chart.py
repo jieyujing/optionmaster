@@ -333,7 +333,7 @@ class ScenarioAnalysisChart(QtWidgets.QWidget):
 
                     value: float = underlying.mid_price * underlying.net_pos * underlying.size
                     portfolio_pnl += value * price_change
-                    portfolio_delta += value / 100
+                    portfolio_delta += underlying.net_pos * underlying.size
 
                 # Calculate option pnl
                 option: OptionData
@@ -369,8 +369,8 @@ class ScenarioAnalysisChart(QtWidgets.QWidget):
                     portfolio_pnl += diff * multiplier
                     portfolio_delta += delta * multiplier
                     portfolio_gamma += gamma * multiplier
-                    portfolio_theta += theta * multiplier
-                    portfolio_vega += vega * multiplier
+                    portfolio_theta += theta * multiplier / ANNUAL_DAYS
+                    portfolio_vega += vega * multiplier / 100
 
                 pnl_buf.append(portfolio_pnl)
                 delta_buf.append(portfolio_delta)

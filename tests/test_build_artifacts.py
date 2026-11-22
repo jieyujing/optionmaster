@@ -18,6 +18,40 @@ def test_universal_wheel_contains_no_platform_binaries() -> None:
     assert not unsafe, f"platform binaries inside universal wheel: {unsafe}"
 
 
+def test_portable_wheel_selects_python_backend_without_compiled_native(tmp_path) -> None:
+    """Import the built wheel itself from an isolated cwd, not source checkout."""
+    import os
+    import subprocess
+    import sys
+
+    wheels = sorted(_DIST.glob("*-py3-none-any.whl"))
+    if not wheels:
+        pytest.skip("build a wheel first with uv build")
+    wheel = wheels[-1]
+    with ZipFile(wheel) as archive:
+        assert "vnpy_optionmaster/pricing/backend.py" in archive.namelist()
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(wheel)
+    test_program = (
+        "from vnpy_optionmaster.engine import PRICING_BACKENDS;"
+        "assert len(PRICING_BACKENDS) == 3;"
+        "assert all(v.backend == 'python' for v in PRICING_BACKENDS.values());"
+        "print('WHEEL_BACKEND: Python fallback for all models')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", test_program],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False
+    )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "WHEEL_BACKEND: Python fallback" in result.stdout
+
+
 def test_sdist_contains_no_prebuilt_platform_binaries() -> None:
     archives = sorted(_DIST.glob("*.tar.gz"))
     if not archives:

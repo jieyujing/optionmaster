@@ -44,3 +44,12 @@ pip install .
 - **2026-11 P0 行情与订单门禁**：自动 Delta 对冲与电子眼依赖每个合约的、来自人工核验交易所日历的精确连续竞价窗口，以及盘口有效性和涨跌停上下限。默认不携带任何官方时段配置；**没有合法配置或边界不确定时，自动新增委托一律禁止**。环境变量 `OPTIONMASTER_VERIFIED_SESSIONS_FILE` 必须指向绝对路径的 JSON，要求 `version=1`、`source.official_url`、`source.verified_by`、`source.verified_at`，以及按 `symbol` / `exchange` / `trading_day` 指定的 `phase=continuous`、带 `+08:00` 的 `start` / `end`。夜盘应采用实际交易日，时间窗为左闭右开。**测试文件 `tests/_session_test_support.py` 生成的合成窗口不能用于实盘**。
 - **行情入站过滤**：只有在有效会话内、时间戳未过期、盘口可解释且同合约时间单调的 Tick 才能进入 `portfolio.update_tick()`；拒绝原因计数在 `OptionEngine.tick_rejections`。合法单边盘口保留可执行方向，但 Mid 不再取缺失侧零报价的平均值，估值和 Greeks 必须有可靠双边输入才能参与自动交易。
 - **还需单独验收**：交易所日历数据获取和每次变更的人工核验、真实 CTP 委托与成交回报乱序、断线恢复（OM-06）、Windows 验证与生产准入（OM-08）。
+
+## 期权定价后端：Cython 优先、Python 自动降级
+
+- **模型名称保持不变**：Black-76、Black-Scholes 和二叉树仍使用原来的 UI 选项与保存设置。
+- **加载方式**：启动时，仅尝试从 `vnpy_optionmaster/pricing/cython_model/<模型名>/` 加载与当前 CPython ABI 和平台匹配的已编译扩展。旧版顶层 Windows `.pyd` 不会被使用。
+- **数值校验**：在模型绑定之前使用不同标的价格、剩余期限、波动率和看涨/看跌方向对照 Python 价格与 Greeks。扩展缺失、加载失败或数值不一致时**整套模型回退 Python**，并记录降级原因。
+- **运行时可观察**：组合配置窗口在模型下方显示实际后端；Cython 加速价格和 Greeks，**隐含波动率反算依然调用 Python**。
+- **不会盘中热切换**：选中的函数在组合初始化时绑定，运行期错误不能触发无提示后端切换；请先停止策略并检查异常。
+- **安装说明**：本项目的通用 wheel `py3-none-any` 刻意不包含平台专用 `.so/.pyd`，因此普通 wheel 安装后默认使用 Python。开发工作树只有已针对当前系统编译并通过校验时才优先 Cython。新平台须单独编译、复测；**数值启动校验不代替 Windows/真实 CTP 的正式验收**。

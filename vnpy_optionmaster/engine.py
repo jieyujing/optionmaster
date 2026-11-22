@@ -35,9 +35,8 @@ from .base import (
     InstrumentData, PortfolioData, OptionData, UnderlyingData, ChainData,
     get_underlying_prefix
 )
-# Prefer the audited Python implementations: checked-in Cython binaries may be stale.
-# Restore the Cython acceleration only after rebuilding and cross-testing the models.
 from .pricing import black_76, binomial_tree, black_scholes
+from .pricing.backend import BackendSelection, select_backend
 from .algo import ElectronicEyeAlgo
 from .risk_safety import quote_is_fresh, risk_snapshot_is_fresh, record_recovery_audit
 from .trading_sessions import session_is_tradable
@@ -45,10 +44,19 @@ from .trading_sessions import CHINA_TZ
 from .market_data_quality import evaluate_quote, valid_order_price, direction_is_executable
 
 
-PRICING_MODELS: dict = {
-    "Black-76 欧式期货期权": black_76,
-    "Black-Scholes 欧式股票期权": black_scholes,
-    "二叉树 美式期货期权": binomial_tree
+# Freeze the verified backend registry once at module import, not during live ticks.
+# Keep the labels intact for previously saved option_master_setting.json files.
+_MODEL_SPECIFICATIONS: tuple[tuple[str, ModuleType, str], ...] = (
+    ("Black-76 欧式期货期权", black_76, "black_76_cython"),
+    ("Black-Scholes 欧式股票期权", black_scholes, "black_scholes_cython"),
+    ("二叉树 美式期货期权", binomial_tree, "binomial_tree_cython"),
+)
+PRICING_BACKENDS: dict[str, BackendSelection] = {
+    label: select_backend(python_model, extension)
+    for label, python_model, extension in _MODEL_SPECIFICATIONS
+}
+PRICING_MODELS: dict[str, ModuleType] = {
+    label: selection.module for label, selection in PRICING_BACKENDS.items()
 }
 
 

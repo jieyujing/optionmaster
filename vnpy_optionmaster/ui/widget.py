@@ -12,7 +12,7 @@ from vnpy.trader.event import EVENT_TICK
 from vnpy.trader.utility import get_digits
 
 from ..base import APP_NAME, EVENT_OPTION_NEW_PORTFOLIO, EVENT_OPTION_RISK_NOTICE, PortfolioData, UnderlyingData
-from ..engine import OptionEngine, OptionHedgeEngine, PRICING_MODELS
+from ..engine import OptionEngine, OptionHedgeEngine, PRICING_MODELS, PRICING_BACKENDS
 from .monitor import (
     OptionMarketMonitor, OptionGreeksMonitor, OptionChainMonitor,
     MonitorCell
@@ -230,6 +230,12 @@ class PortfolioDialog(QtWidgets.QDialog):
 
         form.addRow("定价模型", self.model_name_combo)
 
+        # Show the selected calculation backend without changing saved model keys.
+        self.backend_status_label: QtWidgets.QLabel = QtWidgets.QLabel()
+        self.model_name_combo.currentTextChanged.connect(self.update_backend_status)
+        self.update_backend_status(self.model_name_combo.currentText())
+        form.addRow("计算后端", self.backend_status_label)
+
         # Interest rate spin
         self.interest_rate_spin: QtWidgets.QDoubleSpinBox = QtWidgets.QDoubleSpinBox()
         self.interest_rate_spin.setMinimum(0)
@@ -289,6 +295,19 @@ class PortfolioDialog(QtWidgets.QDialog):
         form.addRow(button)
 
         self.setLayout(form)
+
+    def update_backend_status(self, model_name: str) -> None:
+        """Expose the actual frozen calculation backend, including IV fallback."""
+        selected = PRICING_BACKENDS.get(model_name)
+        if selected is None:
+            self.backend_status_label.setText("未选择有效的定价模型")
+            self.backend_status_label.setToolTip("")
+        elif selected.backend == "cython":
+            self.backend_status_label.setText("Cython（价格/Greeks）· Python（IV）")
+            self.backend_status_label.setToolTip(selected.reason)
+        else:
+            self.backend_status_label.setText("Python（回退，价格/Greeks/IV）")
+            self.backend_status_label.setToolTip(selected.reason)
 
     def update_portfolio_setting(self) -> None:
         """提交模型、折成小数的年化利率、精度和非空标的映射；组合初始化成功则接受，否则关闭。"""

@@ -1,0 +1,143 @@
+{
+  "kind": "optionmaster_offline_grouped_iv_ipc_prototype",
+  "production_approved": false,
+  "no_order_or_portfolio_commit": true,
+  "options_count": 12,
+  "seed": 20261125,
+  "environment": {
+    "python": "3.13.18",
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "source": "pure_synthetic_static_iv_requests"
+  },
+  "methods": [
+    "Serial baseline is the EXISTING SingleIVWorker; batch is an isolated prototype subprocess.",
+    "Both share exact Black-76 structured safeguarded Newton calculate_batch and WorkerCache.",
+    "Same shuffled synthetic request set for all modes; seed only changes request order.",
+    "One Worker subprocess at a time and one IPC exchange per group, 0.5-ms polling.",
+    "All numerical IVResults are reference-checked after timing, no owner risk commit.",
+    "No LatestWins/fair scheduling, live Tick staleness, partial portfolio updates, or order permissions represented.",
+    "Startup reported separately; no real market feed, approved SLO, CTP or Windows evidence."
+  ],
+  "runs": [
+    {
+      "mode": "serial_existing",
+      "batch_size": 1,
+      "options_count": 12,
+      "seed": 20261125,
+      "request_input_hash": "e94ed1e8faf2102d6347ec296ea97f00215d93615e6c91fe8887e17c479a6e2d",
+      "worker_startup_ms": 545.588,
+      "cold": {
+        "validated_responses": 12,
+        "full_numerical_batch_ready": true,
+        "full_portfolio_risk_committed": false,
+        "cache_hits": 0,
+        "batch_count": 12,
+        "total_wall_ms": 8.91,
+        "group_p50_ms": 0.708,
+        "group_p95_ms": 0.907,
+        "poll_count": 24
+      },
+      "warm": {
+        "validated_responses": 12,
+        "full_numerical_batch_ready": true,
+        "full_portfolio_risk_committed": false,
+        "cache_hits": 36,
+        "batch_count": 12,
+        "total_wall_ms": 7.707,
+        "group_p50_ms": 0.654,
+        "group_p95_ms": 0.688,
+        "poll_count": 24
+      }
+    },
+    {
+      "mode": "batch_prototype",
+      "batch_size": 4,
+      "options_count": 12,
+      "seed": 20261125,
+      "request_input_hash": "e94ed1e8faf2102d6347ec296ea97f00215d93615e6c91fe8887e17c479a6e2d",
+      "worker_startup_ms": 538.223,
+      "cold": {
+        "validated_responses": 12,
+        "full_numerical_batch_ready": true,
+        "full_portfolio_risk_committed": false,
+        "cache_hits": 0,
+        "batch_count": 3,
+        "total_wall_ms": 4.321,
+        "group_p50_ms": 1.377,
+        "group_p95_ms": 1.565,
+        "poll_count": 9
+      },
+      "warm": {
+        "validated_responses": 12,
+        "full_numerical_batch_ready": true,
+        "full_portfolio_risk_committed": false,
+        "cache_hits": 36,
+        "batch_count": 3,
+        "total_wall_ms": 1.935,
+        "group_p50_ms": 0.647,
+        "group_p95_ms": 0.65,
+        "poll_count": 6
+      }
+    },
+    {
+      "mode": "batch_prototype",
+      "batch_size": 8,
+      "options_count": 12,
+      "seed": 20261125,
+      "request_input_hash": "e94ed1e8faf2102d6347ec296ea97f00215d93615e6c91fe8887e17c479a6e2d",
+      "worker_startup_ms": 553.995,
+      "cold": {
+        "validated_responses": 12,
+        "full_numerical_batch_ready": true,
+        "full_portfolio_risk_committed": false,
+        "cache_hits": 0,
+        "batch_count": 2,
+        "total_wall_ms": 3.208,
+        "group_p50_ms": 1.601,
+        "group_p95_ms": 1.934,
+        "poll_count": 7
+      },
+      "warm": {
+        "validated_responses": 12,
+        "full_numerical_batch_ready": true,
+        "full_portfolio_risk_committed": false,
+        "cache_hits": 36,
+        "batch_count": 2,
+        "total_wall_ms": 1.411,
+        "group_p50_ms": 0.704,
+        "group_p95_ms": 0.721,
+        "poll_count": 4
+      }
+    },
+    {
+      "mode": "batch_prototype",
+      "batch_size": 12,
+      "options_count": 12,
+      "seed": 20261125,
+      "request_input_hash": "e94ed1e8faf2102d6347ec296ea97f00215d93615e6c91fe8887e17c479a6e2d",
+      "worker_startup_ms": 534.294,
+      "cold": {
+        "validated_responses": 12,
+        "full_numerical_batch_ready": true,
+        "full_portfolio_risk_committed": false,
+        "cache_hits": 0,
+        "batch_count": 1,
+        "total_wall_ms": 2.941,
+        "group_p50_ms": 2.937,
+        "group_p95_ms": 2.937,
+        "poll_count": 5
+      },
+      "warm": {
+        "validated_responses": 12,
+        "full_numerical_batch_ready": true,
+        "full_portfolio_risk_committed": false,
+        "cache_hits": 36,
+        "batch_count": 1,
+        "total_wall_ms": 0.641,
+        "group_p50_ms": 0.639,
+        "group_p95_ms": 0.639,
+        "poll_count": 2
+      }
+    }
+  ]
+}

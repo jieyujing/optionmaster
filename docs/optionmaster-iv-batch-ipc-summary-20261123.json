@@ -1,0 +1,314 @@
+{
+  "kind": "optionmaster_grouped_iv_ipc_synthetic_summary",
+  "synthetic_only": true,
+  "risk_ready_tested": false,
+  "production_approved": false,
+  "seed_count": 3,
+  "sizes": [
+    {
+      "options_count": 6,
+      "seeds": [
+        20261123,
+        20261124,
+        20261125
+      ],
+      "runs": [
+        {
+          "batch_size": 1,
+          "message_count": 6,
+          "cold_median_ms": 4.267,
+          "cold_range_ms": [
+            4.219,
+            4.298
+          ],
+          "warm_median_ms": 3.927,
+          "warm_range_ms": [
+            3.779,
+            4.058
+          ],
+          "speedup_ratio_median": 1.0,
+          "cold_by_seed_ms": [
+            4.219,
+            4.267,
+            4.298
+          ],
+          "warm_by_seed_ms": [
+            3.779,
+            3.927,
+            4.058
+          ]
+        },
+        {
+          "batch_size": 4,
+          "message_count": 2,
+          "cold_median_ms": 3.854,
+          "cold_range_ms": [
+            2.285,
+            4.157
+          ],
+          "warm_median_ms": 1.638,
+          "warm_range_ms": [
+            1.339,
+            1.653
+          ],
+          "speedup_ratio_median": 1.11,
+          "cold_by_seed_ms": [
+            2.285,
+            3.854,
+            4.157
+          ],
+          "warm_by_seed_ms": [
+            1.339,
+            1.638,
+            1.653
+          ]
+        },
+        {
+          "batch_size": 6,
+          "message_count": 1,
+          "cold_median_ms": 2.253,
+          "cold_range_ms": [
+            2.197,
+            2.298
+          ],
+          "warm_median_ms": 0.732,
+          "warm_range_ms": [
+            0.72,
+            0.735
+          ],
+          "speedup_ratio_median": 1.89,
+          "cold_by_seed_ms": [
+            2.253,
+            2.197,
+            2.298
+          ],
+          "warm_by_seed_ms": [
+            0.732,
+            0.72,
+            0.735
+          ]
+        }
+      ]
+    },
+    {
+      "options_count": 12,
+      "seeds": [
+        20261123,
+        20261124,
+        20261125
+      ],
+      "runs": [
+        {
+          "batch_size": 1,
+          "message_count": 12,
+          "cold_median_ms": 8.273,
+          "cold_range_ms": [
+            8.17,
+            8.91
+          ],
+          "warm_median_ms": 7.549,
+          "warm_range_ms": [
+            7.527,
+            7.707
+          ],
+          "speedup_ratio_median": 1.0,
+          "cold_by_seed_ms": [
+            8.17,
+            8.273,
+            8.91
+          ],
+          "warm_by_seed_ms": [
+            7.527,
+            7.549,
+            7.707
+          ]
+        },
+        {
+          "batch_size": 4,
+          "message_count": 3,
+          "cold_median_ms": 4.293,
+          "cold_range_ms": [
+            3.921,
+            4.321
+          ],
+          "warm_median_ms": 2.001,
+          "warm_range_ms": [
+            1.935,
+            2.063
+          ],
+          "speedup_ratio_median": 1.93,
+          "cold_by_seed_ms": [
+            4.293,
+            3.921,
+            4.321
+          ],
+          "warm_by_seed_ms": [
+            2.063,
+            2.001,
+            1.935
+          ]
+        },
+        {
+          "batch_size": 8,
+          "message_count": 2,
+          "cold_median_ms": 3.543,
+          "cold_range_ms": [
+            3.208,
+            3.779
+          ],
+          "warm_median_ms": 1.36,
+          "warm_range_ms": [
+            1.318,
+            1.411
+          ],
+          "speedup_ratio_median": 2.34,
+          "cold_by_seed_ms": [
+            3.779,
+            3.543,
+            3.208
+          ],
+          "warm_by_seed_ms": [
+            1.36,
+            1.318,
+            1.411
+          ]
+        },
+        {
+          "batch_size": 12,
+          "message_count": 1,
+          "cold_median_ms": 2.941,
+          "cold_range_ms": [
+            2.924,
+            3.132
+          ],
+          "warm_median_ms": 0.647,
+          "warm_range_ms": [
+            0.641,
+            0.741
+          ],
+          "speedup_ratio_median": 2.81,
+          "cold_by_seed_ms": [
+            3.132,
+            2.924,
+            2.941
+          ],
+          "warm_by_seed_ms": [
+            0.647,
+            0.741,
+            0.641
+          ]
+        }
+      ]
+    },
+    {
+      "options_count": 24,
+      "seeds": [
+        20261123,
+        20261124,
+        20261125
+      ],
+      "runs": [
+        {
+          "batch_size": 1,
+          "message_count": 24,
+          "cold_median_ms": 16.702,
+          "cold_range_ms": [
+            15.947,
+            17.02
+          ],
+          "warm_median_ms": 15.404,
+          "warm_range_ms": [
+            15.364,
+            16.516
+          ],
+          "speedup_ratio_median": 1.0,
+          "cold_by_seed_ms": [
+            17.02,
+            16.702,
+            15.947
+          ],
+          "warm_by_seed_ms": [
+            16.516,
+            15.364,
+            15.404
+          ]
+        },
+        {
+          "batch_size": 4,
+          "message_count": 6,
+          "cold_median_ms": 8.028,
+          "cold_range_ms": [
+            7.964,
+            8.062
+          ],
+          "warm_median_ms": 3.978,
+          "warm_range_ms": [
+            3.842,
+            4.03
+          ],
+          "speedup_ratio_median": 2.08,
+          "cold_by_seed_ms": [
+            8.062,
+            8.028,
+            7.964
+          ],
+          "warm_by_seed_ms": [
+            3.978,
+            3.842,
+            4.03
+          ]
+        },
+        {
+          "batch_size": 8,
+          "message_count": 3,
+          "cold_median_ms": 5.882,
+          "cold_range_ms": [
+            5.825,
+            6.154
+          ],
+          "warm_median_ms": 2.137,
+          "warm_range_ms": [
+            2.026,
+            2.142
+          ],
+          "speedup_ratio_median": 2.84,
+          "cold_by_seed_ms": [
+            6.154,
+            5.882,
+            5.825
+          ],
+          "warm_by_seed_ms": [
+            2.142,
+            2.137,
+            2.026
+          ]
+        },
+        {
+          "batch_size": 24,
+          "message_count": 1,
+          "cold_median_ms": 5.364,
+          "cold_range_ms": [
+            5.163,
+            5.407
+          ],
+          "warm_median_ms": 0.712,
+          "warm_range_ms": [
+            0.706,
+            0.819
+          ],
+          "speedup_ratio_median": 3.11,
+          "cold_by_seed_ms": [
+            5.163,
+            5.407,
+            5.364
+          ],
+          "warm_by_seed_ms": [
+            0.712,
+            0.706,
+            0.819
+          ]
+        }
+      ]
+    }
+  ]
+}

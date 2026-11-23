@@ -1,0 +1,96 @@
+{
+  "kind": "offline_iv_solver_worker_attribution",
+  "no_production_approval": true,
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "python": "3.13.18",
+  "synthetic_requests": 24,
+  "numeric_operations_per_request": 3,
+  "bounds": [
+    "Two local paths use different solvers; Worker and in-process structured paths use exactly the same solver.",
+    "The legacy API rounds IV and does not have a structured-result LRU.",
+    "One request at a time; no full chain aggregation, market-data admission or order submission.",
+    "Worker startup/selftest is excluded from request latency and reported independently.",
+    "Same-host short runs are subject to OS scheduling and cache temperature; do not infer production p95 SLO.",
+    "Each worker round-trip includes pickle queues, process scheduling, result transport and client polling; reference recomputation/parity verification is outside timed intervals."
+  ],
+  "results": [
+    {
+      "mode": "sync_legacy_brent_rounded",
+      "cold": {
+        "requests": 24,
+        "median_ms": 0.72,
+        "p95_ms": 0.785,
+        "p99_ms": 0.81,
+        "total_ms": 17.604
+      },
+      "warm": {
+        "requests": 24,
+        "median_ms": 0.731,
+        "p95_ms": 0.788,
+        "p99_ms": 0.791,
+        "total_ms": 17.407
+      },
+      "cache_hits": null
+    },
+    {
+      "mode": "inprocess_structured_with_lru",
+      "cold": {
+        "requests": 24,
+        "median_ms": 1.889,
+        "p95_ms": 2.475,
+        "p99_ms": 2.842,
+        "total_ms": 43.841
+      },
+      "warm": {
+        "requests": 24,
+        "median_ms": 0.002,
+        "p95_ms": 0.003,
+        "p99_ms": 0.004,
+        "total_ms": 0.056
+      },
+      "cache_hits": 72
+    },
+    {
+      "mode": "worker_structured_poll_sleep_0.0005_seconds",
+      "worker_startup_ms": 536.465,
+      "cold": {
+        "requests": 24,
+        "median_ms": 2.304,
+        "p95_ms": 2.829,
+        "p99_ms": 2.974,
+        "total_ms": 51.51
+      },
+      "warm": {
+        "requests": 24,
+        "median_ms": 0.661,
+        "p95_ms": 0.672,
+        "p99_ms": 0.682,
+        "total_ms": 15.198
+      },
+      "cache_hits": 72,
+      "poll_count": 157,
+      "per_request_worker_inflight_limit": 1
+    },
+    {
+      "mode": "worker_structured_poll_sleep_0_seconds",
+      "worker_startup_ms": 529.246,
+      "cold": {
+        "requests": 24,
+        "median_ms": 1.836,
+        "p95_ms": 2.547,
+        "p99_ms": 2.849,
+        "total_ms": 45.297
+      },
+      "warm": {
+        "requests": 24,
+        "median_ms": 0.07,
+        "p95_ms": 0.087,
+        "p99_ms": 0.104,
+        "total_ms": 1.749
+      },
+      "cache_hits": 72,
+      "poll_count": 3200,
+      "per_request_worker_inflight_limit": 1
+    }
+  ]
+}

@@ -1,0 +1,177 @@
+{
+  "kind": "offline_microbatch_interleaved_same_prototype",
+  "timestamp_utc": "2026-11-23T04:32:33.265567+00:00",
+  "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+  "python": "3.13.18",
+  "synthetic": true,
+  "real_feed": false,
+  "production_approved": false,
+  "options": 24,
+  "events": 144,
+  "batch1_not_production_singleworker": true,
+  "inflight_preemption": false,
+  "orders": [
+    [
+      1,
+      4,
+      8
+    ],
+    [
+      8,
+      1,
+      4
+    ],
+    [
+      4,
+      8,
+      1
+    ]
+  ],
+  "records": [
+    {
+      "seed": 20261123,
+      "batch_size": 1,
+      "p95_ms": 84.994,
+      "p99_ms": 92.529,
+      "ingress_p95_ms": 3.507,
+      "pending_peak": 23,
+      "superseded": 6,
+      "stale": 13,
+      "parent_cpu_s": 1.0028,
+      "worker_cpu_s_after_reap": 1.5749,
+      "actionable": true
+    },
+    {
+      "seed": 20261123,
+      "batch_size": 4,
+      "p95_ms": 28.439,
+      "p99_ms": 34.21,
+      "ingress_p95_ms": 1.575,
+      "pending_peak": 22,
+      "superseded": 1,
+      "stale": 11,
+      "parent_cpu_s": 0.2818,
+      "worker_cpu_s_after_reap": 0.8548,
+      "actionable": true
+    },
+    {
+      "seed": 20261123,
+      "batch_size": 8,
+      "p95_ms": 11.431,
+      "p99_ms": 11.825,
+      "ingress_p95_ms": 0.772,
+      "pending_peak": 23,
+      "superseded": 1,
+      "stale": 11,
+      "parent_cpu_s": 0.1709,
+      "worker_cpu_s_after_reap": 0.7316,
+      "actionable": true
+    },
+    {
+      "seed": 20261124,
+      "batch_size": 8,
+      "p95_ms": 11.585,
+      "p99_ms": 12.981,
+      "ingress_p95_ms": 0.913,
+      "pending_peak": 22,
+      "superseded": 0,
+      "stale": 12,
+      "parent_cpu_s": 0.1841,
+      "worker_cpu_s_after_reap": 0.7396,
+      "actionable": true
+    },
+    {
+      "seed": 20261124,
+      "batch_size": 1,
+      "p95_ms": 90.016,
+      "p99_ms": 90.645,
+      "ingress_p95_ms": 3.697,
+      "pending_peak": 23,
+      "superseded": 8,
+      "stale": 14,
+      "parent_cpu_s": 1.0872,
+      "worker_cpu_s_after_reap": 1.6655,
+      "actionable": true
+    },
+    {
+      "seed": 20261124,
+      "batch_size": 4,
+      "p95_ms": 27.814,
+      "p99_ms": 35.26,
+      "ingress_p95_ms": 1.423,
+      "pending_peak": 23,
+      "superseded": 1,
+      "stale": 11,
+      "parent_cpu_s": 0.2935,
+      "worker_cpu_s_after_reap": 0.8548,
+      "actionable": true
+    },
+    {
+      "seed": 20261125,
+      "batch_size": 4,
+      "p95_ms": 19.929,
+      "p99_ms": 29.473,
+      "ingress_p95_ms": 1.254,
+      "pending_peak": 23,
+      "superseded": 0,
+      "stale": 12,
+      "parent_cpu_s": 0.2548,
+      "worker_cpu_s_after_reap": 0.8158,
+      "actionable": true
+    },
+    {
+      "seed": 20261125,
+      "batch_size": 8,
+      "p95_ms": 11.378,
+      "p99_ms": 11.705,
+      "ingress_p95_ms": 0.777,
+      "pending_peak": 22,
+      "superseded": 1,
+      "stale": 11,
+      "parent_cpu_s": 0.172,
+      "worker_cpu_s_after_reap": 0.7173,
+      "actionable": true
+    },
+    {
+      "seed": 20261125,
+      "batch_size": 1,
+      "p95_ms": 89.839,
+      "p99_ms": 91.956,
+      "ingress_p95_ms": 3.974,
+      "pending_peak": 23,
+      "superseded": 6,
+      "stale": 11,
+      "parent_cpu_s": 1.1121,
+      "worker_cpu_s_after_reap": 1.667,
+      "actionable": true
+    }
+  ],
+  "paired_seed_p95_ms": {
+    "20261123": {
+      "1": 84.994,
+      "4": 28.439,
+      "8": 11.431
+    },
+    "20261124": {
+      "1": 90.016,
+      "4": 27.814,
+      "8": 11.585
+    },
+    "20261125": {
+      "1": 89.839,
+      "4": 19.929,
+      "8": 11.378
+    }
+  },
+  "median_run_p95_ms": {
+    "1": 89.839,
+    "4": 27.814,
+    "8": 11.431
+  },
+  "limitations": [
+    "Sequential rotated treatments within each seed, not simultaneous randomized pairing",
+    "No isolated timing attribution for in-flight HOL wait or risk-class tail",
+    "No real CTP/source chronology, market regimes or G5 approved SLOs",
+    "No production numerical selftest; sampled CPU is not capacity high-water"
+  ]
+}

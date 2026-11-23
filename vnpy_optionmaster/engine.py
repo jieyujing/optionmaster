@@ -37,6 +37,7 @@ from .base import (
 )
 from .pricing import black_76, binomial_tree, black_scholes
 from .pricing.backend import BackendSelection, select_backend
+from .pricing.iv_runtime import OptionIVRuntime
 from .algo import ElectronicEyeAlgo
 from .risk_safety import quote_is_fresh, risk_snapshot_is_fresh, record_recovery_audit
 from .trading_sessions import session_is_tradable
@@ -79,6 +80,8 @@ class OptionEngine(BaseEngine):
         # Only accepted, ordered quote versions may mutate portfolio IV/Greeks.
         self.last_accepted_ticks: dict[str, tuple[str, datetime, tuple]] = {}
         self.tick_rejections: dict[str, int] = {}
+        # Offline-only opt-in; no automatic Worker activation in live engines.
+        self.iv_runtime: OptionIVRuntime | None = None
 
         self.timer_count: int = 0
         self.timer_trigger: int = 60
@@ -93,7 +96,11 @@ class OptionEngine(BaseEngine):
         self.register_event()
 
     def close(self) -> None:
-        """关闭时保存配置和数据。"""
+        """关闭时先撤销异步风险再保存配置和数据。"""
+        runtime = getattr(self, "iv_runtime", None)
+        if runtime is not None:
+            runtime.close()
+            self.iv_runtime = None
         self.save_setting()
         self.save_data()
 
@@ -204,6 +211,24 @@ class OptionEngine(BaseEngine):
         def reject(reason: str) -> None:
             counters[reason] = counters.get(reason, 0) + 1
 
+        history: dict[str, tuple[str, datetime, tuple]] | None = getattr(
+            self, "last_accepted_ticks", None
+        )
+        if history is None:
+            history = {}
+            self.last_accepted_ticks = history
+        previous = history.get(tick.vt_symbol)
+        if previous is not None and tick.gateway_name != previous[0]:
+            # Detect source transitions BEFORE validating the new source's
+            # timestamp/book. A stale or crossed switch still invalidates
+            # the existing source's otherwise recent, tradable risk.
+            instrument.recovery_quarantined = True
+            if isinstance(instrument, OptionData):
+                instrument.greeks_valid = False
+                instrument.impv_valid = False
+            reject("source_switch_requires_reconcile")
+            return
+
         if not session_is_tradable(
             tick.vt_symbol, policy=getattr(self, "session_policy", None)
         ):
@@ -231,18 +256,8 @@ class OptionEngine(BaseEngine):
             tick.last_price, tick.volume, tick.open_interest,
             tick.limit_down, tick.limit_up,
         )
-        history: dict[str, tuple[str, datetime, tuple]] | None = getattr(
-            self, "last_accepted_ticks", None
-        )
-        if history is None:
-            history = {}
-            self.last_accepted_ticks = history
-        previous = history.get(tick.vt_symbol)
         if previous is not None:
-            gateway, last_stamp, last_signature = previous
-            if tick.gateway_name != gateway:
-                reject("source_switch_requires_reconcile")
-                return
+            _, last_stamp, last_signature = previous
             if stamp < last_stamp:
                 reject("out_of_order_tick")
                 return
@@ -253,6 +268,9 @@ class OptionEngine(BaseEngine):
 
         portfolio.update_tick(tick)
         history[tick.vt_symbol] = (tick.gateway_name, stamp, signature)
+        runtime = getattr(self, "iv_runtime", None)
+        if runtime is not None:
+            runtime.pump()
 
     def process_trade_event(self, event: Event) -> None:
         """没有登记合约或合约没有组合时返回，否则让组合更新成交。"""
@@ -280,7 +298,10 @@ class OptionEngine(BaseEngine):
             portfolio.add_option(contract)
 
     def process_timer_event(self, event: Event) -> None:
-        """定时计数达到触发间隔后归零，并让活跃组合重算平值。"""
+        """同步接收已验证的 Worker 回包，然后处理原有定时逻辑。"""
+        runtime = getattr(self, "iv_runtime", None)
+        if runtime is not None:
+            runtime.pump()
         self.timer_count += 1
         if self.timer_count < self.timer_trigger:
             return
@@ -468,7 +489,12 @@ class OptionEngine(BaseEngine):
                     setattr(obj, name, old_value)
             raise
 
+        runtime = getattr(self, "iv_runtime", None)
+        if runtime is not None:
+            for option in portfolio.options.values():
+                runtime.attach(option)
         return True
+
     def get_portfolio_names(self) -> list[str]:
         """返回全部组合名称。"""
         return list(self.portfolios.keys())
@@ -618,6 +644,35 @@ class OptionHedgeEngine:
         ):
             return
 
+        # Worker replies can update display-only portfolio Greek totals one at
+        # a time. A hedge requires the complete actionable aggregate epoch.
+        aggregate_snapshot = None
+        if isinstance(portfolio, PortfolioData):
+            aggregate_snapshot = portfolio.actionable_risk_snapshot
+            if aggregate_snapshot is None:
+                return
+
+        # Snapshot every held option and its dependencies before sizing the order.
+        # A changed position/quote/model cannot reuse an earlier computed Delta.
+        def held_risk_signature() -> tuple:
+            return tuple(
+                (
+                    symbol, id(option), option.net_pos,
+                    id(getattr(option, "tick", None)),
+                    id(getattr(getattr(option, "underlying", None), "tick", None)),
+                    id(getattr(option, "greeks_quote_version", None)),
+                    getattr(option, "theo_delta", None),
+                    getattr(option, "pos_delta", None),
+                    getattr(option, "interest_rate", None),
+                    getattr(option, "time_to_expiry", None),
+                    getattr(option, "underlying_adjustment", None),
+                )
+                for symbol, option in sorted(getattr(portfolio, "options", {}).items())
+                if option.net_pos
+            )
+
+        held_before = held_risk_signature()
+
         # A CLOSE acknowledgement is not a fill. Require both updated position
         # and updated portfolio Delta before permitting any subsequent hedge.
         if self.close_reconciliation is not None:
@@ -653,9 +708,12 @@ class OptionHedgeEngine:
             return
 
         # Calculate volume of contract to hedge
-        delta_to_hedge: float = self.delta_target - portfolio.pos_delta
+        delta_at_sizing = (aggregate_snapshot.pos_delta if aggregate_snapshot is not None
+                           else portfolio.pos_delta)
+        delta_to_hedge: float = self.delta_target - delta_at_sizing
         instrument = cast(UnderlyingData | None, self.option_engine.get_instrument(self.vt_symbol))
-        if instrument is None or not instrument.theo_delta:
+        if (instrument is None or not instrument.theo_delta
+                or getattr(instrument, "recovery_quarantined", False)):
             return
 
         hedge_volume: float = delta_to_hedge / instrument.theo_delta
@@ -724,6 +782,24 @@ class OptionHedgeEngine:
                 or not session_is_tradable(
                     self.vt_symbol, policy=getattr(self.option_engine, "session_policy", None)
                 )):
+            return
+
+        # Revalidate all option/underlying and holdings dependencies at the
+        # concrete gateway boundary, not only the hedge instrument Tick.
+        if (
+            getattr(instrument, "recovery_quarantined", False)
+            or not isfinite(portfolio.pos_delta)
+            or portfolio.pos_delta != delta_at_sizing
+            or (
+                isinstance(portfolio, PortfolioData)
+                and portfolio.actionable_risk_snapshot is not aggregate_snapshot
+            )
+            or held_risk_signature() != held_before
+            or any(
+                option.net_pos and not risk_snapshot_is_fresh(option)
+                for option in getattr(portfolio, "options", {}).values()
+            )
+        ):
             return
 
         # Close positon if opposite available is enough
@@ -948,7 +1024,9 @@ class OptionAlgoEngine:
         price: float,
         volume: int
     ) -> str:
-        """找不到合约时返回空字符串，否则以限价单发出并记下委托所属算法。"""
+        """只有活跃算法和当前可用风险才能提交限价委托。"""
+        if not algo.trading_active:
+            return ""
         contract: ContractData | None = self.main_engine.get_contract(vt_symbol)
         if not contract or not isfinite(price) or price <= 0 or not isfinite(volume):
             return ""
@@ -968,13 +1046,16 @@ class OptionAlgoEngine:
             return ""
         if not valid_order_price(tick, price, pricetick=contract.pricetick):
             return ""
-        if algo.trading_active and not risk_snapshot_is_fresh(algo.option):
+        # Never permit a direct call to bypass the same risk gate as do_trading.
+        if not risk_snapshot_is_fresh(algo.option):
             return ""
-        if self.main_engine.get_tick(vt_symbol) is not tick or not session_is_tradable(
-            vt_symbol, policy=policy
+        if (
+            self.main_engine.get_tick(vt_symbol) is not tick
+            or not session_is_tradable(vt_symbol, policy=policy)
+            or not algo.trading_active
+            or not risk_snapshot_is_fresh(algo.option)
         ):
             return ""
-
         req: OrderRequest = OrderRequest(
             contract.symbol,
             contract.exchange,

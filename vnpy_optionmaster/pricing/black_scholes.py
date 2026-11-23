@@ -2,7 +2,9 @@
 from collections.abc import Callable
 
 from scipy import stats, optimize
-from math import log, pow, sqrt, exp, isfinite
+from scipy.special import ndtr
+from vnpy_optionmaster.pricing.iv_solver import IVResult, IVStatus, solve_black_iv
+from math import log, pow, sqrt, exp, isfinite, pi
 
 cdf: Callable[..., float] = stats.norm.cdf
 pdf: Callable[..., float] = stats.norm.pdf
@@ -157,6 +159,54 @@ def calculate_greeks(
     return price, delta, gamma, theta, vega
 
 
+_INV_SQRT_TWO_PI = 1.0 / sqrt(2.0 * pi)
+
+
+def _price_vega_for_iv(
+    s: float, k: float, r: float, t: float, v: float, cp: int,
+) -> tuple[float, float]:
+    """Scalar-only structured IV kernel; public pricing/Greeks are unchanged."""
+    root_t = sqrt(t)
+    vol_time = v * root_t
+    d1 = (log(s / k) + (r + 0.5 * v * v) * t) / vol_time
+    d2 = d1 - vol_time
+    discount = exp(-r * t)
+    price = cp * (s * ndtr(cp * d1) - k * ndtr(cp * d2) * discount)
+    vega = s * exp(-0.5 * d1 * d1) * root_t * _INV_SQRT_TWO_PI
+    return float(price), vega
+
+
+def calculate_impv_result(
+    price: float,
+    s: float,
+    k: float,
+    r: float,
+    t: float,
+    cp: int,
+    *,
+    max_iterations: int = 100,
+) -> IVResult:
+    """Full-precision Black-Scholes IV with structured failures."""
+    if (not all(isfinite(x) for x in (price, s, k, r, t))
+            or s <= 0 or k <= 0 or t <= 0 or cp not in (-1, 1)):
+        return IVResult(None, IVStatus.INVALID_INPUT)
+    try:
+        discount = exp(-r * t)
+        lower = max(0.0, cp * (s - k * discount))
+        upper = s if cp == 1 else k * discount
+    except OverflowError:
+        return IVResult(None, IVStatus.INVALID_INPUT)
+    return solve_black_iv(
+        price, s, k, r, t, cp,
+        price_function=calculate_price,
+        vega_function=calculate_vega,
+        price_vega_function=_price_vega_for_iv,
+        lower_price=lower,
+        upper_price=upper,
+        max_iterations=max_iterations,
+    )
+
+
 def calculate_impv(
     price: float,
     s: float,
@@ -165,15 +215,15 @@ def calculate_impv(
     t: float,
     cp: int
 ) -> float:
-    """反解隐含波动率；无套利边界外或求根失败时返回 0。"""
+    """Original Brent compatibility route; Worker uses structured full precision."""
     if (not all(isfinite(x) for x in (price, s, k, r, t))
             or price <= 0 or s <= 0 or k <= 0 or t <= 0
             or cp not in (-1, 1)):
         return 0.0
 
-    discount: float = exp(-r * t)
-    lower: float = max(0.0, cp * (s - k * discount))
-    upper: float = s if cp == 1 else k * discount
+    discount = exp(-r * t)
+    lower = max(0.0, cp * (s - k * discount))
+    upper = s if cp == 1 else k * discount
     if not lower < price < upper:
         return 0.0
 
@@ -181,15 +231,15 @@ def calculate_impv(
         return calculate_price(s, k, r, t, volatility, cp) - price
 
     try:
-        min_vol: float = 1e-8
-        max_vol: float = 10.0
-        f_min: float = residual(min_vol)
-        f_max: float = residual(max_vol)
+        min_vol = 1e-8
+        max_vol = 10.0
+        f_min = residual(min_vol)
+        f_max = residual(max_vol)
         if f_min > 0 or f_max < 0:
             return 0.0
         if abs(f_min) < 1e-12:
             return 0.0
-        volatility: float = float(optimize.brentq(
+        volatility = float(optimize.brentq(
             residual, min_vol, max_vol, xtol=1e-10, maxiter=100
         ))
         if abs(residual(volatility)) > max(1e-8, price * 1e-7):

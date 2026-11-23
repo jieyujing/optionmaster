@@ -1,5 +1,6 @@
 """期权组合、期权链、标的和期权合约数据。"""
 from datetime import datetime
+from dataclasses import dataclass
 from math import isfinite
 from collections.abc import Callable
 from types import ModuleType
@@ -15,6 +16,7 @@ from vnpy.trader.utility import extract_vt_symbol
 
 from .time import calculate_days_to_expiry, expiry_reached, ANNUAL_DAYS
 from .market_data_quality import evaluate_quote
+from .risk_safety import portfolio_risk_identity
 
 
 APP_NAME: str = "OptionMaster"
@@ -46,6 +48,8 @@ class InstrumentData:
         self.mid_price: float = 0
         # A display-only last-known midpoint must not be interpreted as tradable.
         self.mark_valid: bool = False
+        # Never auto-clear this after an unverified gateway/source switch.
+        self.recovery_quarantined: bool = False
 
         self.tick: TickData | None = None
         self.portfolio: PortfolioData
@@ -120,12 +124,18 @@ class OptionData(InstrumentData):
         self.calculate_price: Callable
         self.calculate_greeks: Callable
         self.calculate_impv: Callable
+        # Optional offline IV Worker hook; default production path remains synchronous.
+        self.iv_submit: Callable[[OptionData], None] | None = None
+        self.iv_runtime: object | None = None
 
         # Implied volatility
         self.bid_impv: float = 0
         self.ask_impv: float = 0
         self.mid_impv: float = 0
         self.impv_valid: bool = False
+        self.bid_impv_valid: bool = False
+        self.ask_impv_valid: bool = False
+        self.mid_impv_valid: bool = False
         self.pricing_impv: float = 0
 
         # Greeks related
@@ -138,6 +148,8 @@ class OptionData(InstrumentData):
         self.greeks_valid: bool = False
         # The exact accepted option/underlying Tick pair used for these Greeks.
         self.greeks_quote_version: tuple[TickData | None, TickData | None] | None = None
+        self.greeks_worker_generation: int | None = None
+        self.greeks_input_identity: tuple[object, ...] | None = None
 
         self.pos_value: float = 0
         self.pos_delta: float = 0
@@ -158,6 +170,9 @@ class OptionData(InstrumentData):
     def calculate_option_impv(self) -> None:
         """缺少行情、标的或标的中间价时返回，否则用标的中间价加调整量计算买价、卖价和中间价的隐含波动率。"""
         self.impv_valid = False
+        self.bid_impv_valid = False
+        self.ask_impv_valid = False
+        self.mid_impv_valid = False
         self.refresh_expiry()
         if not self.tick or not self.underlying:
             return
@@ -208,7 +223,10 @@ class OptionData(InstrumentData):
             self.time_to_expiry,
             self.option_type
         )
-        self.impv_valid = isfinite(self.mid_impv) and self.mid_impv > 0
+        self.bid_impv_valid = isfinite(self.bid_impv) and self.bid_impv > 0
+        self.ask_impv_valid = isfinite(self.ask_impv) and self.ask_impv > 0
+        self.mid_impv_valid = isfinite(self.mid_impv) and self.mid_impv > 0
+        self.impv_valid = self.mid_impv_valid
 
     def calculate_theo_greeks(self) -> None:
         """计算理论 Greek；不可计算时保留上一有效数值并标记失效。"""
@@ -282,8 +300,11 @@ class OptionData(InstrumentData):
         """更新行情后重算隐含波动率。"""
         super().update_tick(tick)
 
-        self.calculate_option_impv()
-        self.calculate_theo_greeks()
+        if self.iv_submit is not None:
+            self.iv_submit(self)
+        else:
+            self.calculate_option_impv()
+            self.calculate_theo_greeks()
         self.calculate_pos_greeks()
 
     def update_trade(self, trade: TradeData) -> None:
@@ -295,8 +316,11 @@ class OptionData(InstrumentData):
         """记下标的调整量，并重算隐含波动率、理论希腊值和持仓希腊值。"""
         self.underlying_adjustment = underlying_adjustment
 
-        self.calculate_option_impv()
-        self.calculate_theo_greeks()
+        if self.iv_submit is not None:
+            self.iv_submit(self)
+        else:
+            self.calculate_option_impv()
+            self.calculate_theo_greeks()
         self.calculate_pos_greeks()
 
     def set_chain(self, chain: "ChainData") -> None:
@@ -310,13 +334,17 @@ class OptionData(InstrumentData):
     def set_interest_rate(self, interest_rate: float) -> None:
         """设置利率。"""
         self.interest_rate = interest_rate
-
+        callback = getattr(self, "iv_submit", None)
+        if callback is not None:
+            callback(self)
     def set_pricing_model(self, pricing_model: ModuleType) -> None:
         """绑定定价模型的希腊值、隐含波动率和价格函数。"""
         self.calculate_greeks = pricing_model.calculate_greeks
         self.calculate_impv = pricing_model.calculate_impv
         self.calculate_price = pricing_model.calculate_price
-
+        callback = getattr(self, "iv_submit", None)
+        if callback is not None:
+            callback(self)
 
 class UnderlyingData(InstrumentData):
     """带理论 delta 和期权链的标的数据。"""
@@ -612,6 +640,17 @@ class ChainData:
         self.event_engine.put(event)
 
 
+@dataclass(frozen=True)
+class PortfolioRiskSnapshot:
+    """One complete, validated aggregate epoch, not a display-only Greek."""
+
+    identity: tuple[object, ...]
+    pos_delta: float
+    pos_gamma: float
+    pos_theta: float
+    pos_vega: float
+
+
 class PortfolioData:
     """管理期权、期权链和标的的组合数据。"""
 
@@ -640,6 +679,7 @@ class PortfolioData:
 
         # Greeks decimals precision
         self.precision: int = 0
+        self._actionable_risk_snapshot: PortfolioRiskSnapshot | None = None
 
     def calculate_pos_greeks(self) -> None:
         """汇总标的的持仓 delta，以及各活跃期权链的仓位和希腊值。"""
@@ -668,6 +708,33 @@ class PortfolioData:
             self.pos_vega += chain.pos_vega
 
         self.net_pos = self.long_pos - self.short_pos
+        # Intermediate numerical totals remain display-only until all held
+        # option/underlying dependencies belong to one current risk epoch.
+        identity = portfolio_risk_identity(self)
+        if identity is not None and all(isfinite(value) for value in (
+            self.pos_delta, self.pos_gamma, self.pos_theta, self.pos_vega,
+        )):
+            self._actionable_risk_snapshot = PortfolioRiskSnapshot(
+                identity, self.pos_delta, self.pos_gamma,
+                self.pos_theta, self.pos_vega,
+            )
+        else:
+            self._actionable_risk_snapshot = None
+
+    @property
+    def actionable_risk_snapshot(self) -> PortfolioRiskSnapshot | None:
+        """Never return an epoch after any dependent Tick, holding or model changes."""
+        snapshot = self._actionable_risk_snapshot
+        if snapshot is None or portfolio_risk_identity(self) != snapshot.identity:
+            return None
+        if (
+            self.pos_delta != snapshot.pos_delta
+            or self.pos_gamma != snapshot.pos_gamma
+            or self.pos_theta != snapshot.pos_theta
+            or self.pos_vega != snapshot.pos_vega
+        ):
+            return None
+        return snapshot
 
     def update_tick(self, tick: TickData) -> None:
         """活跃期权的行情交给其所在链，活跃标的的行情交给标的，然后重算组合希腊值。"""

@@ -111,13 +111,21 @@ def _make_algo(
     short_pos: int,
     net_pos: int,
     tick: TickData | None,
+    *,
+    active: bool = True,
 ) -> tuple[ElectronicEyeAlgo, _MainEngine, OptionAlgoEngine]:
     contract: ContractData = _contract()
     main_engine: _MainEngine = _MainEngine(contract)
     option_engine: _OptionEngine = _OptionEngine(main_engine)
     algo_engine: OptionAlgoEngine = OptionAlgoEngine(cast(OptionEngine, option_engine))
-    option: _OptionView = _OptionView(contract.vt_symbol, short_pos, net_pos, tick)
+    # Direct order-seam tests represent an active algorithm with current
+    # synthetic quote dependencies; inactive calls now fail closed.
+    option: _OptionView = _OptionView(
+        contract.vt_symbol, short_pos, net_pos,
+        tick if tick is not None else main_engine.tick,
+    )
     algo: ElectronicEyeAlgo = ElectronicEyeAlgo(algo_engine, cast(OptionData, option))
+    algo.trading_active = active
     return algo, main_engine, algo_engine
 
 

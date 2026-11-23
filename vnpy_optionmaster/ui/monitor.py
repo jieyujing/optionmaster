@@ -337,6 +337,7 @@ class OptionGreeksMonitor(MonitorTable):
     signal_tick: QtCore.Signal = QtCore.Signal(Event)
     signal_trade: QtCore.Signal = QtCore.Signal(Event)
     signal_position: QtCore.Signal = QtCore.Signal(Event)
+    signal_timer: QtCore.Signal = QtCore.Signal(Event)
 
     headers: list[dict] = [
         {"name": "long_pos", "display": "多仓", "cell": PosCell},
@@ -345,7 +346,8 @@ class OptionGreeksMonitor(MonitorTable):
         {"name": "pos_delta", "display": "Delta", "cell": GreeksCell},
         {"name": "pos_gamma", "display": "Gamma", "cell": GreeksCell},
         {"name": "pos_theta", "display": "Theta", "cell": GreeksCell},
-        {"name": "pos_vega", "display": "Vega", "cell": GreeksCell}
+        {"name": "pos_vega", "display": "Vega", "cell": GreeksCell},
+        {"name": "risk_status", "display": "风险状态", "cell": MonitorCell},
     ]
 
     ROW_DATA: TypeAlias = OptionData | UnderlyingData | ChainData | PortfolioData
@@ -457,14 +459,22 @@ class OptionGreeksMonitor(MonitorTable):
         self.resizeColumnToContents(0)
 
     def register_event(self) -> None:
-        """注册行情、成交和持仓事件。"""
+        """注册行情、成交、持仓及异步风险状态刷新事件。"""
         self.signal_tick.connect(self.process_tick_event)
         self.signal_trade.connect(self.process_trade_event)
         self.signal_position.connect(self.process_position_event)
+        self.signal_timer.connect(self.process_timer_event)
 
         self.event_engine.register(EVENT_TICK, self.signal_tick.emit)
         self.event_engine.register(EVENT_TRADE, self.signal_trade.emit)
         self.event_engine.register(EVENT_POSITION, self.signal_position.emit)
+        self.event_engine.register(EVENT_TIMER, self.signal_timer.emit)
+
+    def process_timer_event(self, event: Event) -> None:
+        """Worker 异步完成或报价过期后，无新 Tick 也刷新组合风险标识。"""
+        portfolio: PortfolioData = self.option_engine.get_portfolio(self.portfolio_name)
+        if (portfolio.name, "组合") in self.cells:
+            self.update_row(portfolio.name, "组合", portfolio)
 
     def process_tick_event(self, event: Event) -> None:
         """仅在标的行情到达时刷新该标的、其期权链、期权和组合。"""
@@ -547,6 +557,23 @@ class OptionGreeksMonitor(MonitorTable):
             row_cells["pos_gamma"].setText(f"{row_data.pos_gamma:.{self.greeks_precision}}")
             row_cells["pos_theta"].setText(f"{row_data.pos_theta:.{self.greeks_precision}}")
             row_cells["pos_vega"].setText(f"{row_data.pos_vega:.{self.greeks_precision}}")
+
+        status_cell: MonitorCell = row_cells["risk_status"]
+        if isinstance(row_data, PortfolioData):
+            if row_data.actionable_risk_snapshot is not None:
+                status_cell.setText("快照有效")
+                status_cell.setToolTip(
+                    "组合风险输入已通过完整性验证；仍需另行检查交易时段、盘口和订单门禁。"
+                )
+                status_cell.setForeground(COLOR_GREEKS)
+            else:
+                status_cell.setText("仅供展示")
+                status_cell.setToolTip(
+                    "组合包含未就绪或失效的风险输入；显示数值不可直接作为自动对冲依据。"
+                )
+                status_cell.setForeground(COLOR_POS)
+        else:
+            status_cell.setText("")
 
 
 class OptionChainMonitor(MonitorTable):

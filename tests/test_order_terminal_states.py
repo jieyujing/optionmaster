@@ -167,11 +167,16 @@ def test_manual_acknowledgement_required_after_electronic_eye_cancel(tmp_path) -
     algo.option.net_pos = -1
     algo.send_long(1.8, 6)
     assert len(engine.calls) == 1
+    # A cancelled-close audit explicitly requires stopping the algorithm.
+    algo.trading_active = False
     assert algo.acknowledge_failed_close(
         Direction.LONG, operator="operator", reason="holds rechecked",
         expected_orderid="TEST.1", positions_verified=True,
         audit_path=tmp_path / "recovery.jsonl"
     )
+    algo.send_long(1.8, 6)
+    assert len(engine.calls) == 1  # audit ACK cannot silently restart
+    algo.trading_active = True  # separate explicit operator restart
     algo.send_long(1.8, 6)
     assert len(engine.calls) == 2
     assert engine.calls[-1][0].offset == Offset.CLOSE

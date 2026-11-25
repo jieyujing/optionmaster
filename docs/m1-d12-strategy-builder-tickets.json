@@ -1,0 +1,237 @@
+{
+  "spec_id": "optionmaster-m1-d12-strategy-builder",
+  "status": "SPEC_ONLY",
+  "tickets": [
+    {
+      "id": "T01",
+      "title": "冻结共享策略合同与兼容边界",
+      "blocked_by": [],
+      "status": "READY",
+      "deliverable": "版本化 v4 合同、状态/单位/域/输入版本、OpenAPI 与独立 fixtures；旧 v1-v3 保持。",
+      "acceptance": [
+        "15项决定逐条映射、明确 max leg/quantity/body/axis、价域、时间/IV、eligibility 和错误契约，未决授权门禁独立记录",
+        "固定独立 payoff/model/data contract fixtures；新 schema 不改变旧 schema 或公开大网格",
+        "明确每个分支接口和责任、禁止共享文件无协调修改"
+      ],
+      "verification": "契约测试、旧 OpenAPI 兼容 diff、独立 fixture review",
+      "gate": "G01/G02/G03/G05"
+    },
+    {
+      "id": "T02",
+      "title": "T 型链交互与双栏策略状态",
+      "blocked_by": [
+        "T01"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "在真实批准 archive provider/明确测试 fixture 上实现可交互 T 链、持仓、分栏和草稿状态；不作为发布。",
+      "acceptance": [
+        "直接 +/-/输入、0 删除、跨月保留、最多8期权、标的腿编辑与每腿成本；键盘和窄屏布局",
+        "月份/日期/品种切换按 Q10；旧结果清理和缺失行状态",
+        "新前端只用生成合同，mock仅测试"
+      ],
+      "verification": "React reducer/contract tests、Chromium fixture interaction",
+      "gate": "G04"
+    },
+    {
+      "id": "T03",
+      "title": "确定性 payoff、混合腿与精确风险指标",
+      "blocked_by": [
+        "T01"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "纯领域服务和 payoff API；一至八期权与对应标的线性 P&L、解析分段与指标。",
+      "acceptance": [
+        "同期限真实 intrinsic，无有效IV仍可；entry与market reference 独立",
+        "独立测试 10类策略、零/平段、多根、尾斜率无界、有限域与条件性、乘数及空头符号",
+        "单一能力失败 null；缺失腿不算零；无模型/实盘改动"
+      ],
+      "verification": "TDD 独立黄金值、边界性质、ASGI payoff contract tests",
+      "gate": "G01"
+    },
+    {
+      "id": "T04",
+      "title": "ClickHouse 真实目标授权与 schema/profile 审计",
+      "blocked_by": [
+        "T01"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "只读目标范围和预算、实际 metadata/EXPLAIN、权限/版本证据及链查询计划，或明确 BLOCKED。",
+      "acceptance": [
+        "先取得新读取 scope/服务/请求和资源预算的明确授权；不得使用历史凭证自动拓权",
+        "重验实际表/键/字段、readonly caps 和 throw、客户端 deadline；D03 历史零限制不得通过",
+        "确认 authoritative roster/版本及日历/利率/到期策略证据来源；spot 支持明确"
+      ],
+      "verification": "授权记录、真实 metadata 与 EXPLAIN、profile readback；无生产写",
+      "gate": "G03"
+    },
+    {
+      "id": "T05",
+      "title": "模型三线、最早到期条件估值与 Greeks",
+      "blocked_by": [
+        "T01",
+        "T03"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "新模型 valuation API 复用 D10/D11，在同期限/跨期限/混合策略返回分能力结果。",
+      "acceptance": [
+        "当前与情景按现有模型，terminal同期限精确，最早到期 intrinsic + far leg 定价；未知 cutoff/IV fail closed",
+        "Sticky Strike、独立期限和交割月冲击、锁定128步、per-underlying Greeks",
+        "旧 pre-expiry guard 未放宽；标的线性；模型费时有界"
+      ],
+      "verification": "D11/T07 parity、日历/diagonal/失败输入 ASGI tests",
+      "gate": "G01/G02"
+    },
+    {
+      "id": "T06",
+      "title": "受控 ClickHouse 快照及链覆盖准入",
+      "blocked_by": [
+        "T01",
+        "T04"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "真实只读 provider：有界 coverage/chain/latest complete day/selected snapshot，独立证据准入，保留 archive adapter。",
+      "acceptance": [
+        "独立批准 roster/条款/版本/原始 mark/一致性；CANDIDATE不作估值，跨页面 duplicate 和不完整 fail closed",
+        "固定参数SQL、限制/timeout/no retries、单请求一次物化；新数据授权记录，不覆写旧pin",
+        "真实多日期/交割月/品种覆盖仅已验证；spot 明确可用范围或缺失理由"
+      ],
+      "verification": "负例/隔离 provider 测试+实际授权 CH 查询/Q16 ledger",
+      "gate": "G03"
+    },
+    {
+      "id": "T07",
+      "title": "T 链→精确 payoff 交互闭环",
+      "blocked_by": [
+        "T02",
+        "T03"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "链编辑直接触发有界 payoff，主图准确拐点/平衡点与风险状态，标的腿和权利金联动。",
+      "acceptance": [
+        "实际 archive UI 至真实 payoff API；无需IV的有效腿可显示 exact terminal",
+        "无界/条件/不可用/空组合、零成本和 qty/entry 更新不留陈旧结果",
+        "右侧图和风险、拆分布局可操作"
+      ],
+      "verification": "真实 Chromium archive flow+数值响应断言",
+      "gate": "G01/G04"
+    },
+    {
+      "id": "T08",
+      "title": "三线异步估值与自动刷新联动",
+      "blocked_by": [
+        "T05",
+        "T07"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "模型 current/scenario/horizon 叠加、IV/time/price controls、分能力异步状态。",
+      "acceptance": [
+        "严格 revision+snapshot+request generation；延迟/逆序、A-B-A、取消/超时、429 不污染",
+        "轻量 payoff 优先、有界防抖；缓存只用精确有效的已核对模型输入",
+        "每条线/点的时钟/单位/条件/腿贡献清晰，远月未到期依赖IV"
+      ],
+      "verification": "ASGI concurrency tests+browser delayed response tests",
+      "gate": "G02/G04"
+    },
+    {
+      "id": "T09",
+      "title": "真实行情切换与跨日持仓重估集成",
+      "blocked_by": [
+        "T06",
+        "T08"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "基于真实批准 ClickHouse scope 完整策略流程：最新完整日、日期/产品/月、重估与重建。",
+      "acceptance": [
+        "同一快照、保留 entry、最早到期限制，未准入新数据或失效腿显示 unavailable",
+        "无自动回退旧归档、无混日期、无权查询拒绝",
+        "实际期货混合流程，spot 实际证据覆盖结论；至少明确目标真实可用范围"
+      ],
+      "verification": "实际 composed API/Chromium 真实选中数据及 lineage tests",
+      "gate": "G03/G04"
+    },
+    {
+      "id": "T10",
+      "title": "高级压力测试与旧入口兼容",
+      "blocked_by": [
+        "T02",
+        "T05"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "独立 Advanced Analysis 与旧 v1/v2/v3 入口保留；兼容组合无损投影，超范围说明。",
+      "acceptance": [
+        "旧 route/schema/semantics/caps 与历史 approved payload 未变化",
+        "新 entry P&L 与旧 mark change 不混淆；单腿/混合或IV不可用不隐式丢腿",
+        "保留既有 UI/证据与实盘模块不变"
+      ],
+      "verification": "legacy DTO snapshots、原浏览器回归及兼容投影负例",
+      "gate": "G05"
+    },
+    {
+      "id": "T11",
+      "title": "统一产品与数据安全回归验收",
+      "blocked_by": [
+        "T09",
+        "T10"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "同一候选版本完成 G01–G05，真实策略矩阵、全量测试、安全/版本兼容证据。",
+      "acceptance": [
+        "全部适用 gate 有实际测试/报告、真实 Chromium desktop/mobile",
+        "1199/86/13历史基线不替代本轮；ruff/mypy/uv/build/packaging/pytest 全跑并审查",
+        "数据来源/资源/security、live source、旧 archive/审批和工作树保护"
+      ],
+      "verification": "full regression, end-to-end tests, review diff/manifests",
+      "gate": "G01–G05"
+    },
+    {
+      "id": "T12",
+      "title": "真实目标 Q17 和新版交互性能",
+      "blocked_by": [
+        "T09",
+        "T10"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "独立受控目标测量与签署操作预算，完整 Q17 加策略流。",
+      "acceptance": [
+        "实际fresh CH read/IV/全估值/serialize/render, 冷暖配对、2/4/8与11/21/31网格诊断、实际三线/快速编辑",
+        "足够重复 p50/p95/CPU/RSS/error/phase；约束真实请求/成本与扫描，未授权不跑",
+        "冻结并独立批准预算再判 pass/fail；旧 HTTP cap 不变"
+      ],
+      "verification": "actual benchmark evidence/approval and validation against approved envelope",
+      "gate": "G06"
+    },
+    {
+      "id": "T13",
+      "title": "统一发布候选与人工体验/回滚验收",
+      "blocked_by": [
+        "T11",
+        "T12"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "完整 release candidate 私有独立端口，manifest、健康、人工体验及 rollback rehearsal；不切换旧服务。",
+      "acceptance": [
+        "全部 G01–G06 与目标范围通过；实际构建资产和依赖、可重复候选/旧版本恢复 bundle",
+        "auth/no-store/host/无 trade；真实候选 browser & health、明确用户验收证据",
+        "最终许可和目标待明确时保持 NO-GO；无原服务改动"
+      ],
+      "verification": "release manifest, private staged E2E and rollback rehearsal",
+      "gate": "G07"
+    },
+    {
+      "id": "T14",
+      "title": "独立授权后原生服务切换与发布验证",
+      "blocked_by": [
+        "T13"
+      ],
+      "status": "BLOCKED",
+      "deliverable": "仅在明确 release/restart 目标授权后一次性切换；可回滚且实证。",
+      "acceptance": [
+        "批准 exact build/target 及暴露范围、真实健康/静态/鉴权/估值/监听进程验证",
+        "失败按已验收回滚恢复旧服务并复验，记录实际证据；未授权阻塞",
+        "禁止 DB写/实盘/Git或网络额外操作；无 Docker"
+      ],
+      "verification": "authorized cutover, real post-start smoke, rollback readiness",
+      "gate": "G07"
+    }
+  ]
+}

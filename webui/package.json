@@ -1,0 +1,26 @@
+{
+  "name": "optionmaster-research-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node scripts/generate-contract.mjs",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run generate && npm run typecheck && node scripts/build.mjs",
+    "test": "node scripts/test.mjs",
+    "browser": "node tests/browser.mjs"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "typescript": "5.9.3",
+    "esbuild": "0.28.2",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "playwright-core": "1.63.0"
+  }
+}

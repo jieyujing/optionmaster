@@ -1,0 +1,1222 @@
+{
+  "components": {
+    "schemas": {
+      "ApiEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "calculation_id": {
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Calculation Id",
+            "type": "string"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CoverageDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReasonCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "OK",
+              "UNAVAILABLE"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "valuation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ValuationDTO"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "calculation_id",
+          "status"
+        ],
+        "title": "ApiEnvelope",
+        "type": "object"
+      },
+      "CellContributionDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_id": {
+            "title": "Contract Id",
+            "type": "string"
+          },
+          "scenario_iv": {
+            "title": "Scenario Iv",
+            "type": "number"
+          },
+          "scenario_time_to_expiry": {
+            "title": "Scenario Time To Expiry",
+            "type": "number"
+          },
+          "scenario_value": {
+            "title": "Scenario Value",
+            "type": "number"
+          },
+          "value_change": {
+            "title": "Value Change",
+            "type": "number"
+          }
+        },
+        "required": [
+          "contract_id",
+          "scenario_value",
+          "value_change",
+          "scenario_iv",
+          "scenario_time_to_expiry"
+        ],
+        "title": "CellContributionDTO",
+        "type": "object"
+      },
+      "CoverageDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "admitted_at": {
+            "format": "date-time",
+            "title": "Admitted At",
+            "type": "string"
+          },
+          "admitted_legs": {
+            "title": "Admitted Legs",
+            "type": "integer"
+          },
+          "data_observed_at": {
+            "format": "date-time",
+            "title": "Data Observed At",
+            "type": "string"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/CoverageLegDTO"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "price_basis": {
+            "title": "Price Basis",
+            "type": "string"
+          },
+          "production_valuation_ready": {
+            "const": false,
+            "default": false,
+            "title": "Production Valuation Ready",
+            "type": "boolean"
+          },
+          "requested_legs": {
+            "title": "Requested Legs",
+            "type": "integer"
+          },
+          "scope": {
+            "const": "ARCHIVED_HISTORICAL_INPUTS_ONLY",
+            "default": "ARCHIVED_HISTORICAL_INPUTS_ONLY",
+            "title": "Scope",
+            "type": "string"
+          },
+          "slice_id": {
+            "const": "shfe-cu2211-2022-09-07-v1",
+            "title": "Slice Id",
+            "type": "string"
+          },
+          "source_versions": {
+            "$ref": "#/components/schemas/SourceVersionsDTO"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slice_id",
+          "trade_date",
+          "data_observed_at",
+          "admitted_at",
+          "price_basis",
+          "requested_legs",
+          "admitted_legs",
+          "legs",
+          "source_versions"
+        ],
+        "title": "CoverageDTO",
+        "type": "object"
+      },
+      "CoverageLegDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_id": {
+            "title": "Contract Id",
+            "type": "string"
+          },
+          "contract_multiplier": {
+            "title": "Contract Multiplier",
+            "type": "number"
+          },
+          "exercise_style": {
+            "title": "Exercise Style",
+            "type": "string"
+          },
+          "expiry_date": {
+            "format": "date",
+            "title": "Expiry Date",
+            "type": "string"
+          },
+          "option_type": {
+            "enum": [
+              "CALL",
+              "PUT"
+            ],
+            "title": "Option Type",
+            "type": "string"
+          },
+          "source_exchange": {
+            "title": "Source Exchange",
+            "type": "string"
+          },
+          "source_namespace": {
+            "title": "Source Namespace",
+            "type": "string"
+          },
+          "source_symbol": {
+            "title": "Source Symbol",
+            "type": "string"
+          },
+          "strike": {
+            "title": "Strike",
+            "type": "number"
+          },
+          "underlying_id": {
+            "title": "Underlying Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract_id",
+          "source_namespace",
+          "source_exchange",
+          "source_symbol",
+          "underlying_id",
+          "expiry_date",
+          "option_type",
+          "exercise_style",
+          "strike",
+          "contract_multiplier"
+        ],
+        "title": "CoverageLegDTO",
+        "type": "object"
+      },
+      "EvidenceDigestDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact": {
+            "title": "Artifact",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact",
+          "sha256"
+        ],
+        "title": "EvidenceDigestDTO",
+        "type": "object"
+      },
+      "GreeksDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "delta": {
+            "title": "Delta",
+            "type": "number"
+          },
+          "gamma": {
+            "title": "Gamma",
+            "type": "number"
+          },
+          "theta_annual": {
+            "title": "Theta Annual",
+            "type": "number"
+          },
+          "vega_per_unit": {
+            "title": "Vega Per Unit",
+            "type": "number"
+          }
+        },
+        "required": [
+          "delta",
+          "gamma",
+          "theta_annual",
+          "vega_per_unit"
+        ],
+        "title": "GreeksDTO",
+        "type": "object"
+      },
+      "GridDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_value": {
+            "title": "Baseline Value",
+            "type": "number"
+          },
+          "configured_scenario_value": {
+            "title": "Configured Scenario Value",
+            "type": "number"
+          },
+          "configured_value_change": {
+            "title": "Configured Value Change",
+            "type": "number"
+          },
+          "curve_price_axis": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Curve Price Axis",
+            "type": "array"
+          },
+          "heatmap_iv_axis": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Heatmap Iv Axis",
+            "type": "array"
+          },
+          "heatmap_price_axis": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Heatmap Price Axis",
+            "type": "array"
+          },
+          "heatmap_rows": {
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/GridPointDTO"
+              },
+              "type": "array"
+            },
+            "title": "Heatmap Rows",
+            "type": "array"
+          },
+          "price_curve": {
+            "items": {
+              "$ref": "#/components/schemas/GridPointDTO"
+            },
+            "title": "Price Curve",
+            "type": "array"
+          }
+        },
+        "required": [
+          "baseline_value",
+          "configured_scenario_value",
+          "configured_value_change",
+          "curve_price_axis",
+          "heatmap_price_axis",
+          "heatmap_iv_axis",
+          "price_curve",
+          "heatmap_rows"
+        ],
+        "title": "GridDTO",
+        "type": "object"
+      },
+      "GridPointDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline Value"
+          },
+          "contributions": {
+            "items": {
+              "$ref": "#/components/schemas/CellContributionDTO"
+            },
+            "title": "Contributions",
+            "type": "array"
+          },
+          "iv_shock": {
+            "title": "Iv Shock",
+            "type": "number"
+          },
+          "price_shock": {
+            "title": "Price Shock",
+            "type": "number"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReasonCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scenario_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario Value"
+          },
+          "status": {
+            "enum": [
+              "OK",
+              "UNAVAILABLE"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "value_change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Change"
+          }
+        },
+        "required": [
+          "price_shock",
+          "iv_shock",
+          "status",
+          "reason_code",
+          "baseline_value",
+          "scenario_value",
+          "value_change",
+          "contributions"
+        ],
+        "title": "GridPointDTO",
+        "type": "object"
+      },
+      "LegDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_greeks": {
+            "$ref": "#/components/schemas/GreeksDTO"
+          },
+          "baseline_value": {
+            "title": "Baseline Value",
+            "type": "number"
+          },
+          "contract_id": {
+            "title": "Contract Id",
+            "type": "string"
+          },
+          "contract_multiplier": {
+            "title": "Contract Multiplier",
+            "type": "number"
+          },
+          "effective_contract_version": {
+            "title": "Effective Contract Version",
+            "type": "string"
+          },
+          "exercise_style": {
+            "title": "Exercise Style",
+            "type": "string"
+          },
+          "expiry_date": {
+            "format": "date",
+            "title": "Expiry Date",
+            "type": "string"
+          },
+          "implied_volatility": {
+            "title": "Implied Volatility",
+            "type": "number"
+          },
+          "iv_price_residual": {
+            "title": "Iv Price Residual",
+            "type": "number"
+          },
+          "market_option_price": {
+            "title": "Market Option Price",
+            "type": "number"
+          },
+          "market_underlying_price": {
+            "title": "Market Underlying Price",
+            "type": "number"
+          },
+          "official_artifact_sha256": {
+            "title": "Official Artifact Sha256",
+            "type": "string"
+          },
+          "official_record_id": {
+            "title": "Official Record Id",
+            "type": "string"
+          },
+          "official_source_uri": {
+            "title": "Official Source Uri",
+            "type": "string"
+          },
+          "option_ingested_at": {
+            "format": "date-time",
+            "title": "Option Ingested At",
+            "type": "string"
+          },
+          "option_source": {
+            "title": "Option Source",
+            "type": "string"
+          },
+          "option_type": {
+            "enum": [
+              "CALL",
+              "PUT"
+            ],
+            "title": "Option Type",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "raw_contract_version": {
+            "title": "Raw Contract Version",
+            "type": "string"
+          },
+          "raw_exercise_style": {
+            "title": "Raw Exercise Style",
+            "type": "string"
+          },
+          "scenario_greeks": {
+            "$ref": "#/components/schemas/GreeksDTO"
+          },
+          "scenario_iv": {
+            "title": "Scenario Iv",
+            "type": "number"
+          },
+          "scenario_time_to_expiry": {
+            "title": "Scenario Time To Expiry",
+            "type": "number"
+          },
+          "scenario_value": {
+            "title": "Scenario Value",
+            "type": "number"
+          },
+          "source_exchange": {
+            "title": "Source Exchange",
+            "type": "string"
+          },
+          "source_namespace": {
+            "title": "Source Namespace",
+            "type": "string"
+          },
+          "source_symbol": {
+            "title": "Source Symbol",
+            "type": "string"
+          },
+          "strike": {
+            "title": "Strike",
+            "type": "number"
+          },
+          "terms_ingested_at": {
+            "format": "date-time",
+            "title": "Terms Ingested At",
+            "type": "string"
+          },
+          "underlying_id": {
+            "title": "Underlying Id",
+            "type": "string"
+          },
+          "underlying_ingested_at": {
+            "format": "date-time",
+            "title": "Underlying Ingested At",
+            "type": "string"
+          },
+          "underlying_source": {
+            "title": "Underlying Source",
+            "type": "string"
+          },
+          "value_change": {
+            "title": "Value Change",
+            "type": "number"
+          }
+        },
+        "required": [
+          "contract_id",
+          "source_namespace",
+          "source_exchange",
+          "source_symbol",
+          "underlying_id",
+          "expiry_date",
+          "option_type",
+          "exercise_style",
+          "strike",
+          "contract_multiplier",
+          "quantity",
+          "raw_contract_version",
+          "raw_exercise_style",
+          "effective_contract_version",
+          "official_record_id",
+          "official_source_uri",
+          "official_artifact_sha256",
+          "terms_ingested_at",
+          "option_ingested_at",
+          "underlying_ingested_at",
+          "option_source",
+          "underlying_source",
+          "market_option_price",
+          "market_underlying_price",
+          "implied_volatility",
+          "iv_price_residual",
+          "baseline_value",
+          "baseline_greeks",
+          "scenario_iv",
+          "scenario_time_to_expiry",
+          "scenario_value",
+          "value_change",
+          "scenario_greeks"
+        ],
+        "title": "LegDTO",
+        "type": "object"
+      },
+      "RateDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_sha256": {
+            "title": "Artifact Sha256",
+            "type": "string"
+          },
+          "continuous_rate": {
+            "title": "Continuous Rate",
+            "type": "number"
+          },
+          "convention": {
+            "title": "Convention",
+            "type": "string"
+          },
+          "quote_date": {
+            "format": "date",
+            "title": "Quote Date",
+            "type": "string"
+          },
+          "quoted_percent": {
+            "title": "Quoted Percent",
+            "type": "number"
+          },
+          "source_uri": {
+            "title": "Source Uri",
+            "type": "string"
+          },
+          "tenor_years": {
+            "title": "Tenor Years",
+            "type": "number"
+          }
+        },
+        "required": [
+          "quote_date",
+          "quoted_percent",
+          "tenor_years",
+          "continuous_rate",
+          "source_uri",
+          "artifact_sha256",
+          "convention"
+        ],
+        "title": "RateDTO",
+        "type": "object"
+      },
+      "ReasonCode": {
+        "description": "Stable v1 errors; internal exception text never crosses this seam.",
+        "enum": [
+          "UNAUTHORIZED",
+          "NOT_FOUND",
+          "METHOD_NOT_ALLOWED",
+          "INVALID_REQUEST",
+          "INVALID_JSON",
+          "PAYLOAD_TOO_LARGE",
+          "UNSUPPORTED_MEDIA_TYPE",
+          "SLICE_SCOPE_MISMATCH",
+          "BUSY",
+          "ARCHIVE_UNAVAILABLE",
+          "RATE_UNAVAILABLE",
+          "EXPIRED_SCENARIO",
+          "INVALID_SCENARIO_TIME",
+          "INVALID_SCENARIO",
+          "IV_UNAVAILABLE",
+          "NUMERICAL_FAILURE",
+          "VALUATION_UNAVAILABLE",
+          "INTERNAL_ERROR"
+        ],
+        "title": "ReasonCode",
+        "type": "string"
+      },
+      "SourceVersionsDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceDigestDTO"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "packet_sha256": {
+            "title": "Packet Sha256",
+            "type": "string"
+          },
+          "registry_sha256": {
+            "title": "Registry Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "packet_sha256",
+          "registry_sha256",
+          "artifacts"
+        ],
+        "title": "SourceVersionsDTO",
+        "type": "object"
+      },
+      "UnderlyingExposureDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "baseline_greeks": {
+            "$ref": "#/components/schemas/GreeksDTO"
+          },
+          "scenario_greeks": {
+            "$ref": "#/components/schemas/GreeksDTO"
+          },
+          "underlying_id": {
+            "title": "Underlying Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "underlying_id",
+          "baseline_greeks",
+          "scenario_greeks"
+        ],
+        "title": "UnderlyingExposureDTO",
+        "type": "object"
+      },
+      "UnitsDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "currency": {
+            "const": "CNY",
+            "default": "CNY",
+            "title": "Currency",
+            "type": "string"
+          },
+          "delta": {
+            "const": "CNY_PER_PRICE_UNIT",
+            "default": "CNY_PER_PRICE_UNIT",
+            "title": "Delta",
+            "type": "string"
+          },
+          "gamma": {
+            "const": "CNY_PER_PRICE_UNIT_SQUARED",
+            "default": "CNY_PER_PRICE_UNIT_SQUARED",
+            "title": "Gamma",
+            "type": "string"
+          },
+          "implied_volatility": {
+            "const": "ANNUAL_DECIMAL",
+            "default": "ANNUAL_DECIMAL",
+            "title": "Implied Volatility",
+            "type": "string"
+          },
+          "iv_shock": {
+            "const": "ABSOLUTE_DECIMAL_VOLATILITY",
+            "default": "ABSOLUTE_DECIMAL_VOLATILITY",
+            "title": "Iv Shock",
+            "type": "string"
+          },
+          "mark": {
+            "const": "CNY_PER_TON",
+            "default": "CNY_PER_TON",
+            "title": "Mark",
+            "type": "string"
+          },
+          "multiplier": {
+            "const": "TONS_PER_CONTRACT",
+            "default": "TONS_PER_CONTRACT",
+            "title": "Multiplier",
+            "type": "string"
+          },
+          "price_shock": {
+            "const": "DECIMAL_RETURN",
+            "default": "DECIMAL_RETURN",
+            "title": "Price Shock",
+            "type": "string"
+          },
+          "quantity": {
+            "const": "CONTRACTS",
+            "default": "CONTRACTS",
+            "title": "Quantity",
+            "type": "string"
+          },
+          "theta": {
+            "const": "CNY_PER_CALENDAR_YEAR",
+            "default": "CNY_PER_CALENDAR_YEAR",
+            "title": "Theta",
+            "type": "string"
+          },
+          "value": {
+            "const": "CNY",
+            "default": "CNY",
+            "title": "Value",
+            "type": "string"
+          },
+          "vega": {
+            "const": "CNY_PER_1_ABSOLUTE_SIGMA",
+            "default": "CNY_PER_1_ABSOLUTE_SIGMA",
+            "title": "Vega",
+            "type": "string"
+          }
+        },
+        "title": "UnitsDTO",
+        "type": "object"
+      },
+      "ValuationDTO": {
+        "additionalProperties": false,
+        "properties": {
+          "admitted_at": {
+            "format": "date-time",
+            "title": "Admitted At",
+            "type": "string"
+          },
+          "approved_at": {
+            "format": "date-time",
+            "title": "Approved At",
+            "type": "string"
+          },
+          "clock_policy": {
+            "title": "Clock Policy",
+            "type": "string"
+          },
+          "data_observed_at": {
+            "format": "date-time",
+            "title": "Data Observed At",
+            "type": "string"
+          },
+          "day_count_basis": {
+            "const": "ACT/365F",
+            "default": "ACT/365F",
+            "title": "Day Count Basis",
+            "type": "string"
+          },
+          "expiry_guard": {
+            "const": "DATE_ONLY_NO_EXPIRY_DAY",
+            "default": "DATE_ONLY_NO_EXPIRY_DAY",
+            "title": "Expiry Guard",
+            "type": "string"
+          },
+          "grid": {
+            "$ref": "#/components/schemas/GridDTO"
+          },
+          "legs": {
+            "items": {
+              "$ref": "#/components/schemas/LegDTO"
+            },
+            "title": "Legs",
+            "type": "array"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "model_version": {
+            "const": "m0-american-binomial-v1+d05-archive-v1",
+            "default": "m0-american-binomial-v1+d05-archive-v1",
+            "title": "Model Version",
+            "type": "string"
+          },
+          "nominal_expiry_at": {
+            "format": "date-time",
+            "title": "Nominal Expiry At",
+            "type": "string"
+          },
+          "price_basis": {
+            "title": "Price Basis",
+            "type": "string"
+          },
+          "price_basis_fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price Basis Fallback Reason"
+          },
+          "production_valuation_ready": {
+            "const": false,
+            "default": false,
+            "title": "Production Valuation Ready",
+            "type": "boolean"
+          },
+          "rate": {
+            "$ref": "#/components/schemas/RateDTO"
+          },
+          "reference_at": {
+            "format": "date-time",
+            "title": "Reference At",
+            "type": "string"
+          },
+          "scenario_at": {
+            "format": "date-time",
+            "title": "Scenario At",
+            "type": "string"
+          },
+          "scope": {
+            "const": "ARCHIVED_HISTORICAL_RESEARCH_ONLY",
+            "default": "ARCHIVED_HISTORICAL_RESEARCH_ONLY",
+            "title": "Scope",
+            "type": "string"
+          },
+          "slice_id": {
+            "const": "shfe-cu2211-2022-09-07-v1",
+            "title": "Slice Id",
+            "type": "string"
+          },
+          "source_versions": {
+            "$ref": "#/components/schemas/SourceVersionsDTO"
+          },
+          "time_to_expiry_years": {
+            "title": "Time To Expiry Years",
+            "type": "number"
+          },
+          "trade_date": {
+            "format": "date",
+            "title": "Trade Date",
+            "type": "string"
+          },
+          "tree_steps": {
+            "title": "Tree Steps",
+            "type": "integer"
+          },
+          "underlying_exposures": {
+            "items": {
+              "$ref": "#/components/schemas/UnderlyingExposureDTO"
+            },
+            "title": "Underlying Exposures",
+            "type": "array"
+          },
+          "units": {
+            "$ref": "#/components/schemas/UnitsDTO"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "slice_id",
+          "trade_date",
+          "data_observed_at",
+          "approved_at",
+          "admitted_at",
+          "reference_at",
+          "scenario_at",
+          "nominal_expiry_at",
+          "clock_policy",
+          "time_to_expiry_years",
+          "price_basis",
+          "price_basis_fallback_reason",
+          "source_versions",
+          "rate",
+          "model",
+          "tree_steps",
+          "units",
+          "warnings",
+          "legs",
+          "underlying_exposures",
+          "grid"
+        ],
+        "title": "ValuationDTO",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "ResearchBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "OptionMaster Archived Research API",
+    "version": "1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/research/coverage": {
+      "get": {
+        "operationId": "coverage_api_v1_research_coverage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Bearer authentication required"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Local computation busy"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Internal computation failure"
+          }
+        },
+        "security": [
+          {
+            "ResearchBearer": []
+          }
+        ],
+        "summary": "Coverage"
+      }
+    },
+    "/api/v1/research/valuations": {
+      "post": {
+        "operationId": "valuation_api_v1_research_valuations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "curve_price_shocks": {
+                    "items": {
+                      "maximum": 1.0,
+                      "minimum": -1.0,
+                      "type": "number"
+                    },
+                    "maxItems": 11,
+                    "minItems": 1,
+                    "title": "Curve Price Shocks",
+                    "type": "array"
+                  },
+                  "heatmap_iv_shocks": {
+                    "items": {
+                      "maximum": 1.0,
+                      "minimum": -1.0,
+                      "type": "number"
+                    },
+                    "maxItems": 5,
+                    "minItems": 1,
+                    "title": "Heatmap Iv Shocks",
+                    "type": "array"
+                  },
+                  "heatmap_price_shocks": {
+                    "items": {
+                      "maximum": 1.0,
+                      "minimum": -1.0,
+                      "type": "number"
+                    },
+                    "maxItems": 5,
+                    "minItems": 1,
+                    "title": "Heatmap Price Shocks",
+                    "type": "array"
+                  },
+                  "positions": {
+                    "additionalProperties": {
+                      "maximum": 1000.0,
+                      "minimum": -1000.0,
+                      "type": "integer"
+                    },
+                    "maxProperties": 2,
+                    "minProperties": 2,
+                    "propertyNames": {
+                      "maxLength": 128,
+                      "minLength": 1
+                    },
+                    "title": "Positions",
+                    "type": "object"
+                  },
+                  "scenario_at": {
+                    "maxLength": 32,
+                    "minLength": 25,
+                    "title": "Scenario At",
+                    "type": "string"
+                  },
+                  "schema_version": {
+                    "const": "1.0",
+                    "title": "Schema Version",
+                    "type": "string"
+                  },
+                  "slice_id": {
+                    "const": "shfe-cu2211-2022-09-07-v1",
+                    "title": "Slice Id",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "schema_version",
+                  "slice_id",
+                  "positions",
+                  "scenario_at",
+                  "curve_price_shocks",
+                  "heatmap_price_shocks",
+                  "heatmap_iv_shocks"
+                ],
+                "title": "ValuationRequestDTO",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Bearer authentication required"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Local computation busy"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiEnvelope"
+                }
+              }
+            },
+            "description": "Internal computation failure"
+          }
+        },
+        "security": [
+          {
+            "ResearchBearer": []
+          }
+        ],
+        "summary": "Valuation"
+      }
+    }
+  }
+}

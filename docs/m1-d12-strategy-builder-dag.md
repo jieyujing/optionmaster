@@ -1,15 +1,19 @@
 # M1-D12 并行实施任务 DAG
 
-状态：Spec-only，未开始实施。Source of truth: m1-d12-strategy-builder-spec.md、m1-d12-strategy-builder ADR、m1-d12-strategy-builder-tickets.json。仅本地文档，无远程 issue。
+状态：修订版实施 DAG（运行进度以原 D12 Goal 为准，T04 in_progress；已完成步骤不重做）。Source of truth: m1-d12-strategy-builder-spec.md、ADR、tickets.json。仅本地文档，无远程 issue。
 
-目标：Q15 C，先冻结共享合同，然后 UI、计算、数据分支并行/依赖就绪时执行，统一集成验收和一次经授权发布。分支完成不等于整个产品完成；不得扩大授权。T04/T06/T12 必须独立确认真实 DB/请求资源预算和数据准入；T14 必须独立确认最终发布目标。并行逻辑不代表自动创建 Agent 或并发访问生产。
+> **2026-11-25 11:25 UTC / 北京时间19:25 — 用户确认只读消费者边界（当前有效，优先于此前 T04/A1/SQLite-first 文件中冲突的 ClickHouse 前置门禁）。** 复用已提供的既有 ClickHouse 目标与 quant 账号；用户确认账号权限足够。OptionMaster 只查询数据库内已存在的行情，不要求 QuantFeed 停写、全局 Writer/锁/INSERT/未决发布/待写入检查、生产者 manifest 或专用代理/角色/opaque Reader 回执作为读取前置条件。旧 CP68/A1/SQLite 证据保留为历史，不再作为 D12 读取阻塞。Reader 绑定仅指服务端既有目标+账号的安全凭证引用与实际 SELECT 可用；无需新建账号、改权限、专用角色或读取/披露密码。使用固定参数 SELECT、已授权表/列/键、分页及请求/扫描/超时/结果限制；优先查询级保护，不改持久 profile/settings；不得把 LIMIT 或客户端超时单独当作扫描上限。无法安全限制的查询应收窄或拒绝。账号权限由用户确认，连通性/schema/实际 SELECT 尚待 T04 验证，本文件不冒充运行证据。既有数据读取不需要逐日生产者静止证明；仅在数据完整性可证时称 latest complete，其他可见数据明确 PARTIAL/COVERAGE_UNKNOWN，缺失/冲突的选中腿不可估值。既有精确历史 pin 不改，保留 terms/mark/basis、Q16 消费者快照验证、Q17 实测预算、全量回归及独立发布授权。禁止任何生产写入、GM/API新采集、权限/服务修改、Git发布或实盘操作。本次仅修订文档与Goal，未执行数据库请求。
+
+**T04 实施记录（2026-11-25 11:32 UTC）：** `quant` 账号权限为用户确认，未实测。既有 LAN 目标上的 `optionmaster_history` 是此前已获授权且已配置的只读账号，本次通过安全凭证引用认证、实际资源限制、表结构及代表性 EXPLAIN 核验；可复用这一现有通道，不要求专用账号、角色或新增绑定，也不改变 quant 可选地位。仅研究诊断，不冒充生产 TLS 或应用端连接验收。实际记录见 `docs/evidence/m1-d12/T04-consumer-read-verification-20261125.md`。
+
+目标：Q15 C，共享合同后 UI/计算/数据分支依赖执行；T04/T06 使用既有只读目标、消费者验证，不等待 QuantFeed。T12 独立确认真实 Q17 资源预算；T14 独立发布授权。并行依赖不是 Agent/并发访问授权。SQLite-first L01–L03 已完成，原依赖边不变。
 
 ```mermaid
 flowchart TD
   T01["T01 冻结共享策略合同与兼容边界"]
   T02["T02 T 型链交互与双栏策略状态"]
   T03["T03 确定性 payoff、混合腿与精确风险指标"]
-  T04["T04 ClickHouse 真实目标授权与 schema/profile 审计"]
+  T04["T04 ClickHouse 既有账号只读连接与 schema/查询边界核验"]
   T05["T05 模型三线、最早到期条件估值与 Greeks"]
   T06["T06 受控 ClickHouse 快照及链覆盖准入"]
   T07["T07 T 链→精确 payoff 交互闭环"]
@@ -54,7 +58,7 @@ flowchart TD
 - Layer 7: T13
 - Layer 8: T14
 
-Initial runnable frontier: **T01 only**. After T01, T02/T03/T04 independently ready; T04 actual connection still requires explicit authorization. T05 and T06 and T07 become independently runnable as their blockers pass; T11/T12 may run in parallel only on same frozen integrated candidate with approved bounded resources. Parallel scope ownership: UI branch owns frontend layout/state; computation branch owns additive pure payoff/model/API modules; data branch owns provider/admission; T01 owns shared schema/fixtures; coordinate integration wiring in T07–T10, do not overwrite common files. Sequential fallback when no safe isolation/subagents; each milestone independently validates, do not claim simultaneous executions without evidence.
+Original DAG frontier: T01. Current Goal T01/T02/T03/T05/T07/T08/T10 and L01–L03 complete; T04 resumes on existing read-only scope, without producer-state checks. T06 and T09 depend on actual consumer-side validation. T11/T12 on same frozen integrated candidate; T12 bounded budget independently approved. Preserve scope ownership and completed work.
 
 ## Tickets
 
@@ -88,15 +92,15 @@ Initial runnable frontier: **T01 only**. After T01, T02/T03/T04 independently re
   - 单一能力失败 null；缺失腿不算零；无模型/实盘改动
 - verification: TDD 独立黄金值、边界性质、ASGI payoff contract tests
 
-### T04 — ClickHouse 真实目标授权与 schema/profile 审计
+### T04 — ClickHouse 既有账号只读连接与 schema/查询边界核验
 - blocked_by: T01
-- state: BLOCKED; gate: G03
-- deliverable: 只读目标范围和预算、实际 metadata/EXPLAIN、权限/版本证据及链查询计划，或明确 BLOCKED。
+- state: READY (Goal: in_progress); gate: G03
+- deliverable: 复用既有目标和已授权账号（quant 或已有且实际核验通过的只读账号）的只读连接、schema/键、固定 SELECT 查询计划及有界执行证据。
 - acceptance:
-  - 先取得新读取 scope/服务/请求和资源预算的明确授权；不得使用历史凭证自动拓权
-  - 重验实际表/键/字段、readonly caps 和 throw、客户端 deadline；D03 历史零限制不得通过
-  - 确认 authoritative roster/版本及日历/利率/到期策略证据来源；spot 支持明确
-- verification: 授权记录、真实 metadata 与 EXPLAIN、profile readback；无生产写
+  - 用户已确认既有账号权限足够；不新增账号/角色/代理、不读取凭证明文、不依赖 QuantFeed Writer/锁/INSERT/未决发布/待写入或 A1 opaque 回执
+  - 实际目标及 SELECT 连通性、表/键/字段与必要 EXPLAIN；固定参数、白名单、查询级正向扫描/时间/结果限制及客户端 deadline；不得改持久权限/profile/settings
+  - 读取既有行情范围；检查条款/标的配对/日历/价格口径的可用证据；完整性未知显式标记，不要求全库或生产者证明
+- verification: 用户决策记录、实际 SELECT/metadata/必要 EXPLAIN、有限查询保护与结果；无生产写
 
 ### T05 — 模型三线、最早到期条件估值与 Greeks
 - blocked_by: T01, T03
@@ -111,12 +115,22 @@ Initial runnable frontier: **T01 only**. After T01, T02/T03/T04 independently re
 ### T06 — 受控 ClickHouse 快照及链覆盖准入
 - blocked_by: T01, T04
 - state: BLOCKED; gate: G03
-- deliverable: 真实只读 provider：有界 coverage/chain/latest complete day/selected snapshot，独立证据准入，保留 archive adapter。
+- deliverable: 真实只读 provider：有界 coverage/chain/selected snapshot；在完整性可证时标记 latest complete day，保留 archive adapter。
 - acceptance:
-  - 独立批准 roster/条款/版本/原始 mark/一致性；CANDIDATE不作估值，跨页面 duplicate 和不完整 fail closed
-  - 固定参数SQL、限制/timeout/no retries、单请求一次物化；新数据授权记录，不覆写旧pin
-  - 真实多日期/交割月/品种覆盖仅已验证；spot 明确可用范围或缺失理由
-- verification: 负例/隔离 provider 测试+实际授权 CH 查询/Q16 ledger
+  - 仅以既有 DB 可见行情构建请求内冻结快照；核对选中 exact key/date/terms/mark/basis 与重复、冲突、缺失，跨查询记录读时和可用版本；生产者持续写入不构成门禁
+  - 缺失/冲突/可检测版本变化的选中腿 unavailable；有数据可展示，覆盖不完整或未知标 PARTIAL/COVERAGE_UNKNOWN，不声称完整日/全局事务快照；仅可证完整时称 latest complete
+  - 固定参数SELECT、限制/timeout/no retries；单请求一次物化，后续估值复用；旧pin不变，真实多日期/月份/品种及spot仅声明经验证范围
+- verification: 负例/隔离 provider 测试+实际有界 CH SELECT/消费者 Q16 coverage ledger
+
+### T06 当前历史研究范围（2026-11-25 用户决策）
+
+T06 仅消费既有 ClickHouse 历史行情，不接入实时 GM/CTP/WebSocket，不采集、补录、同步行情，不连接交易或持仓。复用原 T04 已验证边界，不以 QuantFeed 状态为前置条件。收敛为四个内部交付切片，不新增 DAG 节点：
+- T06-A 历史目录：显式有限 portfolio/date window，固定 SQL 与实测计划及预算，目录候选不冒充已验证报价。
+- T06-B T 型报价：按已验证日期、合约身份/条款与标的读取，分批查询；缺失/冲突明确不可用。
+- T06-C 历史分析快照：每次授权观察冻结已消费行、来源/版本/读时及口径；复用现有 payoff/model/Greeks，允许部分覆盖有效腿；不声称全局事务或原始日 PIT。
+- T06-D 集成验收：离线 Provider/HTTP 模拟与既有 API/Archive 回归，另需已授权真实 CH 选中数据验证、跨范围 Q16 及后续 T09 UI 联动。
+
+本轮离线实现已完成，实际 CH 新请求为零；原 12/12 额度耗尽，不自动启动连接或扩大范围。仅可在另获真实读取授权、明确范围及预算后执行真实观察。T06 仍 in_progress、G03/Q16 未通过、T09–T14 独立，生产 NO-GO。证据：docs/evidence/m1-d12/T06-historical-provider-offline-r66-20261125/REPORT.md。
 
 ### T07 — T 链→精确 payoff 交互闭环
 - blocked_by: T02, T03
@@ -201,4 +215,8 @@ Initial runnable frontier: **T01 only**. After T01, T02/T03/T04 independently re
 
 ## Gate notes
 
-No ticket is DONE; statuses are planned, not evidence. D01–D11 remain previous completed scope, not new tasks. No actual database read, fresh data approval, Git/issue publication, feature edit, build or deployment from writing this DAG. For execution re-read actual worktree and scope, resolve T04 resource/authority and T12 signed Q17 budget; no repeat of completed D01–D11. For release, record final evidence and explicit target authorization; preserve existing local service until verified cutover. New feature release NO-GO today. Current operational unknowns and decision ownership are in Spec Further Notes. The structural DAG validation cannot establish feasibility, runtime data readiness or implementation completion.
+Ticket statuses are dependency planning, not runtime evidence; current Goal is authoritative. Existing completed steps and historical evidence remain unchanged. T04 no longer depends on QuantFeed or dedicated Reader attestation; actual bounded SELECT/schema still unverified. T06 consumer Q16, T09 integration, T11–T14 regression/Q17/release remain. No database request, code implementation, Git publication or deployment performed by this revision. New release remains NO-GO.
+
+## 2026-11-25 12:13:52 UTC — 用户授权修订（当前有效）
+
+取消此前人为设定的 CH 累计次数限制及普通只读查询逐批审批。既有目标和已授权账号允许自主进行历史行情发现、分页、固定参数 SELECT/EXPLAIN、Q16 与现有资源范围内验收，不再以历史 12/12 流水为停止条件。原流水与历史证据保留不改。保留单请求 100000 扫描行/16 MiB、5 秒、64 MiB 内存、64 行/1 MiB 结果、throw、客户端 8 秒及串行、失败停止、不自动重试；每批仍有明确的有限计划及防重复执行记录，属于工程保护而非新增审批。禁止数据库写入、DDL、权限/profile/settings 变更、GM/CTP/实时/QuantFeed 探测、服务切换或 Git 发布。独立发布门禁及超出现有资源边界的操作保持原约束。

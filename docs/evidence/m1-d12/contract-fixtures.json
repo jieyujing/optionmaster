@@ -1,0 +1,586 @@
+{
+  "note": "Independent synthetic contract fixtures, no actual source/approval. Request includes a short future. Payoff response is separate long-call-only example (revision 2): F0=K=100, premium 5, M=10; at F=90/100 P&L=-50, 105=0, 110=50; unbounded profit, max loss 50. Source/hash values are inert placeholders.",
+  "payoff_request": {
+    "schema_version": "4.0",
+    "portfolio_revision": 1,
+    "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "options": [
+      {
+        "contract_id": "EX.TEST.C100",
+        "quantity": 1,
+        "entry_price": 5,
+        "entry_trade_date": "2022-09-07",
+        "entry_snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "entry_origin": "ADMITTED_MARK"
+      }
+    ],
+    "underlyings": [
+      {
+        "underlying_id": "EX.TEST.F1",
+        "quantity": -1,
+        "entry_price": 100,
+        "entry_trade_date": "2022-09-07",
+        "entry_snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "entry_origin": "USER_EDITED",
+        "quantity_unit": "CONTRACTS"
+      }
+    ],
+    "reference_underlying_id": "EX.TEST.F1",
+    "curve_price_returns": [
+      -0.1,
+      0,
+      0.1
+    ],
+    "price_shocks_by_underlying": {},
+    "global_price_shock": 0
+  },
+  "valuation_request": {
+    "schema_version": "4.0",
+    "portfolio_revision": 1,
+    "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "options": [
+      {
+        "contract_id": "EX.TEST.C100",
+        "quantity": 1,
+        "entry_price": 5,
+        "entry_trade_date": "2022-09-07",
+        "entry_snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "entry_origin": "ADMITTED_MARK"
+      }
+    ],
+    "underlyings": [
+      {
+        "underlying_id": "EX.TEST.F1",
+        "quantity": -1,
+        "entry_price": 100,
+        "entry_trade_date": "2022-09-07",
+        "entry_snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "entry_origin": "USER_EDITED",
+        "quantity_unit": "CONTRACTS"
+      }
+    ],
+    "reference_underlying_id": "EX.TEST.F1",
+    "curve_price_returns": [
+      -0.1,
+      0,
+      0.1
+    ],
+    "price_shocks_by_underlying": {},
+    "scenario_at": "2022-09-07T15:00:00+08:00",
+    "global_iv_shock": 0,
+    "iv_shocks_by_expiry": {
+      "EX.TEST.EXP": 0.02
+    },
+    "global_price_shock": 0
+  },
+  "payoff_response": {
+    "schema_version": "4.0",
+    "calculation_id": "dddddddddddddddddddddddddddddddd",
+    "status": "OK",
+    "reason": null,
+    "portfolio_revision": 2,
+    "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "input_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "coverage": null,
+    "chain": null,
+    "payoff": {
+      "snapshot": {
+        "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "provider": "SYNTHETIC_FIXTURE",
+        "exchange": "EX",
+        "product": "TEST",
+        "trade_date": "2022-09-07",
+        "observed_at": "2022-09-07T15:00:00+08:00",
+        "read_at": "2022-09-08T15:00:00+08:00",
+        "admitted_at": "2022-09-08T15:00:00+08:00",
+        "reference_at": "2022-09-07T15:00:00+08:00",
+        "source_pin": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "source_versions": {
+          "fixture": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "price_basis": "SETTLEMENT",
+        "basis_fallback_reason": null,
+        "currency": "CNY",
+        "production_valuation_ready": false
+      },
+      "reference_underlying_id": "EX.TEST.F1",
+      "legs": [
+        {
+          "instrument_id": "EX.TEST.C100",
+          "underlying_id": "EX.TEST.F1",
+          "payoff_eligibility": {
+            "status": "ELIGIBLE",
+            "reason": null
+          },
+          "model_eligibility": {
+            "status": "UNAVAILABLE",
+            "reason": "IV_UNAVAILABLE"
+          },
+          "market_price": 5,
+          "multiplier": 10,
+          "quote_unit": "CNY_PER_UNIT",
+          "implied_volatility": null,
+          "kind": "OPTION",
+          "quantity": 1,
+          "entry_price": 5,
+          "entry_trade_date": "2022-09-07",
+          "entry_snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "entry_origin": "ADMITTED_MARK",
+          "quantity_unit": "CONTRACTS",
+          "expiry_id": "EX.TEST.EXP"
+        }
+      ],
+      "accounting": {
+        "status": "OK",
+        "reason": null,
+        "net_premium": 50,
+        "spot_entry_cash": 0
+      },
+      "terminal": {
+        "kind": "TERMINAL",
+        "status": "OK",
+        "reason": null,
+        "evaluation_date": "2022-10-01",
+        "evaluation_at": null,
+        "points": [
+          {
+            "price_return": -0.1,
+            "underlying_prices": {
+              "EX.TEST.F1": 90
+            },
+            "status": "OK",
+            "reason": null,
+            "pnl": -50,
+            "contributions": [
+              {
+                "instrument_id": "EX.TEST.C100",
+                "pnl": -50
+              }
+            ]
+          },
+          {
+            "price_return": 0,
+            "underlying_prices": {
+              "EX.TEST.F1": 100
+            },
+            "status": "OK",
+            "reason": null,
+            "pnl": -50,
+            "contributions": [
+              {
+                "instrument_id": "EX.TEST.C100",
+                "pnl": -50
+              }
+            ]
+          },
+          {
+            "price_return": 0.05,
+            "underlying_prices": {
+              "EX.TEST.F1": 105
+            },
+            "status": "OK",
+            "reason": null,
+            "pnl": 0,
+            "contributions": [
+              {
+                "instrument_id": "EX.TEST.C100",
+                "pnl": 0
+              }
+            ]
+          },
+          {
+            "price_return": 0.1,
+            "underlying_prices": {
+              "EX.TEST.F1": 110.00000000000001
+            },
+            "status": "OK",
+            "reason": null,
+            "pnl": 50,
+            "contributions": [
+              {
+                "instrument_id": "EX.TEST.C100",
+                "pnl": 50
+              }
+            ]
+          }
+        ]
+      },
+      "risk": {
+        "scope": "EXACT_DOMAIN",
+        "domain": {
+          "start": -1,
+          "end": null,
+          "start_inclusive": true,
+          "end_inclusive": false
+        },
+        "max_profit": {
+          "kind": "UNBOUNDED",
+          "value": null,
+          "reason": null
+        },
+        "max_loss": {
+          "kind": "FINITE",
+          "value": 50,
+          "reason": null
+        },
+        "reward_risk_ratio": {
+          "kind": "UNAVAILABLE",
+          "value": null,
+          "reason": "CONDITIONAL_ONLY"
+        },
+        "breakevens": [
+          0.05
+        ],
+        "zero_intervals": [],
+        "roots_exhaustive": true
+      },
+      "global_price_shock": 0,
+      "price_shocks_by_underlying": {}
+    },
+    "valuation": null
+  },
+  "chain_response": {
+    "schema_version": "4.0",
+    "calculation_id": "dddddddddddddddddddddddddddddddd",
+    "status": "OK",
+    "reason": null,
+    "portfolio_revision": null,
+    "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "input_hash": null,
+    "coverage": null,
+    "chain": {
+      "snapshot": {
+        "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "provider": "SYNTHETIC_FIXTURE",
+        "exchange": "EX",
+        "product": "TEST",
+        "trade_date": "2022-09-07",
+        "observed_at": "2022-09-07T15:00:00+08:00",
+        "read_at": "2022-09-08T15:00:00+08:00",
+        "admitted_at": "2022-09-08T15:00:00+08:00",
+        "reference_at": "2022-09-07T15:00:00+08:00",
+        "source_pin": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "source_versions": {
+          "fixture": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "price_basis": "SETTLEMENT",
+        "basis_fallback_reason": null,
+        "currency": "CNY",
+        "production_valuation_ready": false
+      },
+      "underlying": {
+        "underlying_id": "EX.TEST.F1",
+        "kind": "FUTURE",
+        "delivery_month": "TEST1",
+        "market_price": 100,
+        "multiplier": 10,
+        "quantity_unit": "CONTRACTS",
+        "quote_unit": "CNY_PER_UNIT",
+        "terms_version": "fixture-v1",
+        "domain": {
+          "status": "VERIFIED",
+          "min_price": 0,
+          "max_price": null,
+          "min_inclusive": true,
+          "max_inclusive": false
+        },
+        "eligibility": {
+          "status": "ELIGIBLE",
+          "reason": null
+        }
+      },
+      "rows": [
+        {
+          "strike": 100,
+          "call": {
+            "contract_id": "EX.TEST.C100",
+            "underlying_id": "EX.TEST.F1",
+            "option_type": "CALL",
+            "strike": 100,
+            "expiry_id": "EX.TEST.EXP",
+            "expiry_date": "2022-10-01",
+            "expiry_at": null,
+            "expiry_clock": "DATE_ONLY",
+            "exercise_style": "AMERICAN",
+            "model": "AMERICAN_BINOMIAL",
+            "multiplier": 10,
+            "quote_unit": "CNY_PER_UNIT",
+            "terms_version": "fixture-v1",
+            "market_price": 5,
+            "implied_volatility": null,
+            "payoff_eligibility": {
+              "status": "ELIGIBLE",
+              "reason": null
+            },
+            "model_eligibility": {
+              "status": "UNAVAILABLE",
+              "reason": "IV_UNAVAILABLE"
+            }
+          },
+          "put": null
+        }
+      ],
+      "next_cursor": null
+    },
+    "payoff": null,
+    "valuation": null
+  },
+  "coverage_response": {
+    "schema_version": "4.0",
+    "calculation_id": "dddddddddddddddddddddddddddddddd",
+    "status": "OK",
+    "reason": null,
+    "portfolio_revision": null,
+    "snapshot_id": null,
+    "input_hash": null,
+    "coverage": {
+      "products": [
+        {
+          "exchange": "EX",
+          "product": "TEST",
+          "latest_complete_trade_date": null,
+          "days": [
+            {
+              "trade_date": "2022-09-07",
+              "status": "ARCHIVE_ONLY",
+              "reason": null,
+              "months": [
+                {
+                  "underlying_id": "EX.TEST.F1",
+                  "delivery_month": "TEST1",
+                  "discovered_contracts": 1,
+                  "admitted_contracts": 1,
+                  "status": "ADMITTED",
+                  "reason": null
+                },
+                {
+                  "underlying_id": "EX.TEST.F2",
+                  "delivery_month": "TEST2",
+                  "discovered_contracts": 2,
+                  "admitted_contracts": 0,
+                  "status": "DISCOVERY_ONLY",
+                  "reason": "CANDIDATE_ONLY"
+                }
+              ]
+            }
+          ],
+          "spot_status": "UNAVAILABLE",
+          "spot_reason": "SCOPE_UNAVAILABLE"
+        }
+      ],
+      "next_cursor": null
+    },
+    "chain": null,
+    "payoff": null,
+    "valuation": null
+  },
+  "model_partial_response": {
+    "schema_version": "4.0",
+    "calculation_id": "dddddddddddddddddddddddddddddddd",
+    "status": "PARTIAL",
+    "reason": "IV_UNAVAILABLE",
+    "portfolio_revision": 2,
+    "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "input_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "coverage": null,
+    "chain": null,
+    "payoff": null,
+    "valuation": {
+      "snapshot": {
+        "snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "provider": "SYNTHETIC_FIXTURE",
+        "exchange": "EX",
+        "product": "TEST",
+        "trade_date": "2022-09-07",
+        "observed_at": "2022-09-07T15:00:00+08:00",
+        "read_at": "2022-09-08T15:00:00+08:00",
+        "admitted_at": "2022-09-08T15:00:00+08:00",
+        "reference_at": "2022-09-07T15:00:00+08:00",
+        "source_pin": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "source_versions": {
+          "fixture": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "price_basis": "SETTLEMENT",
+        "basis_fallback_reason": null,
+        "currency": "CNY",
+        "production_valuation_ready": false
+      },
+      "reference_underlying_id": "EX.TEST.F1",
+      "legs": [
+        {
+          "instrument_id": "EX.TEST.C100",
+          "underlying_id": "EX.TEST.F1",
+          "payoff_eligibility": {
+            "status": "ELIGIBLE",
+            "reason": null
+          },
+          "model_eligibility": {
+            "status": "UNAVAILABLE",
+            "reason": "IV_UNAVAILABLE"
+          },
+          "market_price": 5,
+          "multiplier": 10,
+          "quote_unit": "CNY_PER_UNIT",
+          "implied_volatility": null,
+          "kind": "OPTION",
+          "quantity": 1,
+          "entry_price": 5,
+          "entry_trade_date": "2022-09-07",
+          "entry_snapshot_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "entry_origin": "ADMITTED_MARK",
+          "quantity_unit": "CONTRACTS",
+          "expiry_id": "EX.TEST.EXP"
+        }
+      ],
+      "global_price_shock": 0,
+      "price_shocks_by_underlying": {},
+      "global_iv_shock": 0,
+      "iv_shocks_by_expiry": {},
+      "rates": [],
+      "model_diagnostics": [
+        "FIXTURE_IV_UNAVAILABLE"
+      ],
+      "current": {
+        "kind": "CURRENT",
+        "status": "UNAVAILABLE",
+        "reason": "IV_UNAVAILABLE",
+        "evaluation_date": "2022-09-07",
+        "evaluation_at": "2022-09-07T15:00:00+08:00",
+        "points": []
+      },
+      "scenario": {
+        "kind": "SCENARIO",
+        "status": "UNAVAILABLE",
+        "reason": "IV_UNAVAILABLE",
+        "evaluation_date": "2022-09-07",
+        "evaluation_at": "2022-09-07T15:00:00+08:00",
+        "points": []
+      },
+      "horizon": {
+        "kind": "TERMINAL",
+        "status": "OK",
+        "reason": null,
+        "evaluation_date": "2022-10-01",
+        "evaluation_at": null,
+        "points": [
+          {
+            "price_return": -0.1,
+            "underlying_prices": {
+              "EX.TEST.F1": 90
+            },
+            "status": "OK",
+            "reason": null,
+            "pnl": -50,
+            "contributions": [
+              {
+                "instrument_id": "EX.TEST.C100",
+                "pnl": -50
+              }
+            ]
+          },
+          {
+            "price_return": 0,
+            "underlying_prices": {
+              "EX.TEST.F1": 100
+            },
+            "status": "OK",
+            "reason": null,
+            "pnl": -50,
+            "contributions": [
+              {
+                "instrument_id": "EX.TEST.C100",
+                "pnl": -50
+              }
+            ]
+          },
+          {
+            "price_return": 0.05,
+            "underlying_prices": {
+              "EX.TEST.F1": 105
+            },
+            "status": "OK",
+            "reason": null,
+            "pnl": 0,
+            "contributions": [
+              {
+                "instrument_id": "EX.TEST.C100",
+                "pnl": 0
+              }
+            ]
+          },
+          {
+            "price_return": 0.1,
+            "underlying_prices": {
+              "EX.TEST.F1": 110.00000000000001
+            },
+            "status": "OK",
+            "reason": null,
+            "pnl": 50,
+            "contributions": [
+              {
+                "instrument_id": "EX.TEST.C100",
+                "pnl": 50
+              }
+            ]
+          }
+        ]
+      },
+      "horizon_risk": {
+        "scope": "EXACT_DOMAIN",
+        "domain": {
+          "start": -1,
+          "end": null,
+          "start_inclusive": true,
+          "end_inclusive": false
+        },
+        "max_profit": {
+          "kind": "UNBOUNDED",
+          "value": null,
+          "reason": null
+        },
+        "max_loss": {
+          "kind": "FINITE",
+          "value": 50,
+          "reason": null
+        },
+        "reward_risk_ratio": {
+          "kind": "UNAVAILABLE",
+          "value": null,
+          "reason": "CONDITIONAL_ONLY"
+        },
+        "breakevens": [
+          0.05
+        ],
+        "zero_intervals": [],
+        "roots_exhaustive": true
+      },
+      "current_greeks": [
+        {
+          "underlying_id": "EX.TEST.F1",
+          "quote_unit": "CNY_PER_UNIT",
+          "status": "UNAVAILABLE",
+          "reason": "IV_UNAVAILABLE",
+          "delta": null,
+          "gamma": null,
+          "theta_annual": null,
+          "vega_per_unit": null
+        }
+      ],
+      "scenario_greeks": [
+        {
+          "underlying_id": "EX.TEST.F1",
+          "quote_unit": "CNY_PER_UNIT",
+          "status": "UNAVAILABLE",
+          "reason": "IV_UNAVAILABLE",
+          "delta": null,
+          "gamma": null,
+          "theta_annual": null,
+          "vega_per_unit": null
+        }
+      ],
+      "tree_steps": 128,
+      "iv_policy": "STICKY_STRIKE",
+      "day_count": "ACT/365F"
+    }
+  }
+}

@@ -50,18 +50,18 @@
     },
     {
       "id": "T04",
-      "title": "ClickHouse 真实目标授权与 schema/profile 审计",
+      "title": "ClickHouse 既有账号只读连接与 schema/查询边界核验",
       "blocked_by": [
         "T01"
       ],
-      "status": "BLOCKED",
-      "deliverable": "只读目标范围和预算、实际 metadata/EXPLAIN、权限/版本证据及链查询计划，或明确 BLOCKED。",
+      "status": "READY",
+      "deliverable": "复用既有目标和已授权账号（quant 或已有且实际核验通过的只读账号）的只读连接及实际 schema/键、固定 SELECT 查询计划和有界执行证据；仅记录真实连接或查询阻塞。",
       "acceptance": [
-        "先取得新读取 scope/服务/请求和资源预算的明确授权；不得使用历史凭证自动拓权",
-        "重验实际表/键/字段、readonly caps 和 throw、客户端 deadline；D03 历史零限制不得通过",
-        "确认 authoritative roster/版本及日历/利率/到期策略证据来源；spot 支持明确"
+        "用户确认 quant 账号权限足够；允许复用此前已经授权并经实际核验的现有只读账号；不新增账号/角色/代理、不披露凭证、不依赖 QuantFeed Writer/锁/INSERT/未决发布/待写入或 A1 opaque 回执",
+        "实际目标及 SELECT 连通性、表/键/字段与必要 EXPLAIN；固定参数、白名单、查询级正向扫描/时间/结果限制及客户端 deadline；不得改持久权限/profile/settings",
+        "读取既有行情范围；检查条款/标的配对/日历/价格口径的可用证据；完整性未知显式标记，不要求全库或生产者证明"
       ],
-      "verification": "授权记录、真实 metadata 与 EXPLAIN、profile readback；无生产写",
+      "verification": "用户决策记录、实际 SELECT/metadata/必要 EXPLAIN、有限查询保护与结果；无生产写",
       "gate": "G03"
     },
     {
@@ -89,13 +89,15 @@
         "T04"
       ],
       "status": "BLOCKED",
-      "deliverable": "真实只读 provider：有界 coverage/chain/latest complete day/selected snapshot，独立证据准入，保留 archive adapter。",
+      "deliverable": "历史 CH 只读 Provider；内部 A 历史目录、B T 型报价、C 冻结分析快照、D 集成验收。只消费既有数据，不接入实时行情或交易，不要求完整日/全品种。保留 Archive 及原 Q16/G03、真实读取和发布门禁。",
       "acceptance": [
-        "独立批准 roster/条款/版本/原始 mark/一致性；CANDIDATE不作估值，跨页面 duplicate 和不完整 fail closed",
-        "固定参数SQL、限制/timeout/no retries、单请求一次物化；新数据授权记录，不覆写旧pin",
-        "真实多日期/交割月/品种覆盖仅已验证；spot 明确可用范围或缺失理由"
+        "仅以既有 DB 可见行情构建请求内冻结快照；核对选中 exact key/date/terms/mark/basis 与重复、冲突、缺失，跨查询记录读时和可用版本；生产者持续写入不构成门禁",
+        "缺失/冲突/可检测版本变化的选中腿 unavailable；有数据可展示，覆盖不完整或未知标 PARTIAL/COVERAGE_UNKNOWN，不声称完整日/全局事务快照；仅可证完整时称 latest complete",
+        "固定参数SELECT、限制/timeout/no retries；单请求一次物化，后续估值复用；旧pin不变，真实多日期/月份/品种及spot仅声明经验证范围",
+        "2026-11-25 范围收敛：A 显式有限历史范围及目录；B 固定有界报价/标的读取；C 有效选中腿快照和现有估值引擎；D 离线兼容与真实 CH 验收。部分覆盖可用，不使用空缺价格；不触及 GM/CTP/WebSocket、采集或实盘。原 12/12 是历史流水，不再限制新普通只读查询；沿用既有账号/目标及单请求资源保护。",
+        "2026-11-25T12:13:52Z 用户取消累计 CH 查询次数及普通只读逐批审批；有限单批执行计划及防重仍保留，禁止写入、配置修改与实盘接入。"
       ],
-      "verification": "负例/隔离 provider 测试+实际授权 CH 查询/Q16 ledger",
+      "verification": "负例/隔离 provider 测试+实际有界 CH SELECT/消费者 Q16 coverage ledger",
       "gate": "G03"
     },
     {

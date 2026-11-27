@@ -1,0 +1,15 @@
+/* D08: preserve D07 visual system; compact, keyboard accessible chain picker. */
+.chain-picker{display:flex;flex-direction:column;gap:8px;margin-bottom:13px;padding:11px;border:1px solid #30465d;background:#142233;border-radius:7px}
+.picker-title{display:flex;align-items:center;justify-content:space-between;gap:5px;font-size:12px}
+.picker-title span{font-size:11px;font-weight:600;white-space:nowrap}
+.chain-picker select{font:inherit;color:var(--fg);background:#0e1621;border:1px solid #3b4b61;border-radius:6px;padding:8px;min-height:40px;width:100%;min-width:0;font-size:12px}
+.chain-picker select:focus-visible{outline:2px solid #a2d7ff;outline-offset:3px}
+.chain-picker option:disabled{color:#8794a6}
+.picker-filters{display:grid;grid-template-columns:1fr 1.25fr;gap:7px}
+.picker-filters>div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.picker-filters input{font-size:12px;min-height:40px;padding:8px}
+.chain-picker .small-actions{margin:0}.chain-picker .secondary{font-size:12px;padding:7px 5px}
+.remove-leg{margin-left:auto;flex-shrink:0;display:grid;place-items:center;border:1px solid #36475d;background:#172536;color:var(--muted);width:30px;height:30px;border-radius:5px}
+.remove-leg:hover{color:#ffb1b2;background:#392832;border-color:#80535b}
+.remove-leg .icon{width:15px;height:15px}
+@media(max-width:650px){.chain-picker select,.chain-picker input,.remove-leg{min-height:44px}.remove-leg{width:44px}}

@@ -28,6 +28,10 @@ dependencies = [
 ]
 keywords = ["quant", "quantitative", "investment", "trading", "algotrading", "options"]
 
+[project.optional-dependencies]
+research-web = ["fastapi>=0.115,<1", "pydantic>=2.10,<3", "uvicorn>=0.34,<1"]
+research-web-test = ["httpx>=0.28,<1"]
+
 [project.urls]
 "Homepage" = "https://www.vnpy.com"
 "Documentation" = "https://www.vnpy.com/docs"

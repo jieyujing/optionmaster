@@ -17,7 +17,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install ta-lib==0.6.4 --index=https://pypi.vnpy.com
-        pip install -e . ruff mypy uv pytest
+        pip install -e ".[research-web,research-web-test]" ruff mypy uv pytest
     - name: Lint with ruff
       run: |
         # Run ruff linter based on pyproject.toml configuration
